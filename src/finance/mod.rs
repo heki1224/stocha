@@ -1,3 +1,3 @@
 pub mod gbm;
-
-pub use gbm::{gbm_paths, GbmParams};
+pub mod heston;
+pub mod jump_diffusion;

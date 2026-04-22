@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-22
+
+### Added
+
+- **Sobol sequence** (`stocha.sobol(dim, n_samples)`): Joe & Kuo 2008 direction numbers
+  via `sobol-qmc 2.5.1`; f64 output, up to 1,000 dimensions (21,201 with `EXTENDED` params)
+- **Halton sequence** (`stocha.halton(dim, n_samples, skip=0)`): van der Corput
+  construction with consecutive prime bases; up to 40 dimensions, `skip` parameter
+  for warm-up
+- **Heston model** (`stocha.heston(...)`): Stochastic volatility with Euler-Maruyama
+  and Full Truncation (FT) scheme; correlated Brownians via Cholesky decomposition
+- **Merton Jump-Diffusion** (`stocha.merton_jump_diffusion(...)`): Lognormal jump sizes
+  with Poisson arrivals (Bernoulli approximation); martingale compensator applied
+
+### Changed
+
+- Version bumped to `0.2.0`
+
 ## [0.1.0] - 2026-04-22
 
 ### Added

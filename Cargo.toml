@@ -1,6 +1,6 @@
 [package]
 name = "stocha"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "High-performance random number and financial simulation library for Python"
 license = "MIT OR Apache-2.0"
@@ -21,6 +21,8 @@ rand_pcg = "0.10"
 rayon = "1.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sobol-qmc = "2.5.1"
+halton = "0.2.1"
 
 [dev-dependencies]
 approx = "0.5"

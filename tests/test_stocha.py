@@ -1,5 +1,5 @@
 """
-Basic pytest tests for stocha v0.1.
+Basic pytest tests for stocha v0.1 / v0.2.
 
 Requires: maturin develop --release (or pip install stocha)
 Run with: pytest tests/ -v
@@ -153,3 +153,164 @@ class TestValidation:
     def test_rng_normal_invalid_scale(self):
         with pytest.raises((ValueError, Exception)):
             stocha.RNG(seed=0).normal(size=10, scale=-1.0)
+
+
+# ---------------------------------------------------------------------------
+# sobol function
+# ---------------------------------------------------------------------------
+
+class TestSobol:
+    def test_shape(self):
+        pts = stocha.sobol(dim=4, n_samples=256)
+        assert pts.shape == (256, 4)
+        assert pts.dtype == np.float64
+
+    def test_values_in_unit_interval(self):
+        pts = stocha.sobol(dim=3, n_samples=1000)
+        assert (pts >= 0.0).all()
+        assert (pts < 1.0).all()
+
+    def test_deterministic(self):
+        a = stocha.sobol(dim=2, n_samples=64)
+        b = stocha.sobol(dim=2, n_samples=64)
+        np.testing.assert_array_equal(a, b)
+
+    def test_low_discrepancy_uniformity(self):
+        # Each dimension should have mean close to 0.5 for a well-distributed sequence
+        pts = stocha.sobol(dim=3, n_samples=1024)
+        for d in range(3):
+            assert abs(pts[:, d].mean() - 0.5) < 0.05
+
+    def test_invalid_dim(self):
+        with pytest.raises((ValueError, Exception)):
+            stocha.sobol(dim=0, n_samples=10)
+
+
+# ---------------------------------------------------------------------------
+# halton function
+# ---------------------------------------------------------------------------
+
+class TestHalton:
+    def test_shape(self):
+        pts = stocha.halton(dim=3, n_samples=500)
+        assert pts.shape == (500, 3)
+        assert pts.dtype == np.float64
+
+    def test_values_in_unit_interval(self):
+        pts = stocha.halton(dim=4, n_samples=1000)
+        assert (pts > 0.0).all()
+        assert (pts < 1.0).all()
+
+    def test_deterministic(self):
+        a = stocha.halton(dim=2, n_samples=100)
+        b = stocha.halton(dim=2, n_samples=100)
+        np.testing.assert_array_equal(a, b)
+
+    def test_skip_consistency(self):
+        full = stocha.halton(dim=2, n_samples=20, skip=0)
+        skipped = stocha.halton(dim=2, n_samples=10, skip=10)
+        np.testing.assert_array_almost_equal(full[10:, :], skipped)
+
+    def test_invalid_dim(self):
+        with pytest.raises((ValueError, Exception)):
+            stocha.halton(dim=0, n_samples=10)
+
+
+# ---------------------------------------------------------------------------
+# heston function
+# ---------------------------------------------------------------------------
+
+class TestHeston:
+    def _kw(self, n_paths=1000):
+        return dict(
+            s0=100.0, v0=0.04, mu=0.05, kappa=2.0, theta=0.04,
+            xi=0.3, rho=-0.7, t=1.0, steps=252, n_paths=n_paths, seed=42
+        )
+
+    def test_output_shape(self):
+        paths = stocha.heston(**self._kw())
+        assert paths.shape == (1000, 253)
+        assert paths.dtype == np.float64
+
+    def test_initial_price(self):
+        paths = stocha.heston(**self._kw())
+        np.testing.assert_array_equal(paths[:, 0], 100.0)
+
+    def test_positive_prices(self):
+        paths = stocha.heston(**self._kw())
+        assert (paths > 0).all()
+
+    def test_reproducibility(self):
+        kw = self._kw()
+        np.testing.assert_array_equal(stocha.heston(**kw), stocha.heston(**kw))
+
+    def test_expected_terminal_price(self):
+        # E[S(T)] = S0 * exp(mu * T) under Heston
+        paths = stocha.heston(**self._kw(n_paths=100_000))
+        mean_terminal = paths[:, -1].mean()
+        expected = 100.0 * math.exp(0.05)
+        assert pytest.approx(mean_terminal, rel=2e-2) == expected
+
+    def test_invalid_s0(self):
+        kw = self._kw()
+        kw["s0"] = -1.0
+        with pytest.raises((ValueError, Exception)):
+            stocha.heston(**kw)
+
+    def test_invalid_rho(self):
+        kw = self._kw()
+        kw["rho"] = 2.0
+        with pytest.raises((ValueError, Exception)):
+            stocha.heston(**kw)
+
+
+# ---------------------------------------------------------------------------
+# merton_jump_diffusion function
+# ---------------------------------------------------------------------------
+
+class TestMertonJumpDiffusion:
+    def _kw(self, n_paths=1000):
+        return dict(
+            s0=100.0, mu=0.05, sigma=0.2,
+            lambda_=1.0, mu_j=-0.05, sigma_j=0.1,
+            t=1.0, steps=252, n_paths=n_paths, seed=42
+        )
+
+    def test_output_shape(self):
+        paths = stocha.merton_jump_diffusion(**self._kw())
+        assert paths.shape == (1000, 253)
+        assert paths.dtype == np.float64
+
+    def test_initial_price(self):
+        paths = stocha.merton_jump_diffusion(**self._kw())
+        np.testing.assert_array_equal(paths[:, 0], 100.0)
+
+    def test_positive_prices(self):
+        paths = stocha.merton_jump_diffusion(**self._kw())
+        assert (paths > 0).all()
+
+    def test_reproducibility(self):
+        kw = self._kw()
+        np.testing.assert_array_equal(
+            stocha.merton_jump_diffusion(**kw),
+            stocha.merton_jump_diffusion(**kw),
+        )
+
+    def test_expected_terminal_price(self):
+        # E[S(T)] = S0 * exp(mu * T) due to Merton compensator
+        paths = stocha.merton_jump_diffusion(**self._kw(n_paths=200_000))
+        mean_terminal = paths[:, -1].mean()
+        expected = 100.0 * math.exp(0.05)
+        assert pytest.approx(mean_terminal, rel=2e-2) == expected
+
+    def test_invalid_sigma(self):
+        kw = self._kw()
+        kw["sigma"] = 0.0
+        with pytest.raises((ValueError, Exception)):
+            stocha.merton_jump_diffusion(**kw)
+
+    def test_invalid_s0(self):
+        kw = self._kw()
+        kw["s0"] = -1.0
+        with pytest.raises((ValueError, Exception)):
+            stocha.merton_jump_diffusion(**kw)
