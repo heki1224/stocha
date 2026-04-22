@@ -32,6 +32,8 @@ pip install stocha
 ```bash
 git clone https://github.com/heki1224/stocha.git
 cd stocha
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install maturin
 maturin develop --release
 ```

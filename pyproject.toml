@@ -23,14 +23,14 @@ classifiers = [
     "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
+dependencies = [
+    "numpy>=1.24",
+]
+
 [project.urls]
 Homepage = "https://github.com/heki1224/stocha"
 Repository = "https://github.com/heki1224/stocha"
 Changelog = "https://github.com/heki1224/stocha/blob/main/CHANGELOG.md"
-
-dependencies = [
-    "numpy>=1.24",
-]
 
 [project.optional-dependencies]
 dev = [
