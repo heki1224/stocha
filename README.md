@@ -53,6 +53,26 @@ paths = stocha.gbm(
 )
 # paths.shape == (100_000, 253)
 
+# ── Quasi-random sequences (low-discrepancy) ─────────────────────────────
+pts = stocha.sobol(dim=2, n_samples=1024)    # (1024, 2), values in [0, 1)
+pts = stocha.halton(dim=2, n_samples=1024)   # (1024, 2), values in (0, 1)
+
+# ── Heston stochastic volatility ─────────────────────────────────────────
+paths_h = stocha.heston(
+    s0=100.0, v0=0.04, mu=0.05,
+    kappa=2.0, theta=0.04, xi=0.3, rho=-0.7,
+    t=1.0, steps=252, n_paths=10_000, seed=42,
+)
+# paths_h.shape == (10_000, 253)
+
+# ── Merton jump-diffusion ─────────────────────────────────────────────────
+paths_m = stocha.merton_jump_diffusion(
+    s0=100.0, mu=0.05, sigma=0.20,
+    lambda_=1.0, mu_j=-0.05, sigma_j=0.10,
+    t=1.0, steps=252, n_paths=10_000, seed=42,
+)
+# paths_m.shape == (10_000, 253)
+
 # ── VaR / CVaR ────────────────────────────────────────────────────────────
 returns = paths[:, -1] / paths[:, 0] - 1
 var, cvar = stocha.var_cvar(returns, confidence=0.95)
