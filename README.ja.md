@@ -9,12 +9,15 @@
 
 ## 特長
 
-- **高速 PRNG**: PCG64DXSM（NumPy デフォルト実装）、Xoshiro256++、MT19937
-- **正規分布**: Marsaglia 極座標法（v0.2 で Ziggurat 法に移行予定）
-- **GBM シミュレーション**: Euler-Maruyama × Rayon 並列処理
-- **対称変量法**: 組み込み分散低減オプション
+- **高速 PRNG**: PCG64DXSM（NumPy デフォルト実装）
+- **準乱数列**: Sobol（Joe & Kuo 2008）・Halton 列
+- **確率過程モデル**: GBM、Heston、Merton Jump-Diffusion、Hull-White
+- **リスク指標**: VaR・CVaR（Expected Shortfall）
+- **コピュラ**: ガウスコピュラ・Student-t コピュラ（多変量依存構造モデリング）
+- **ボラティリティ**: SABR インプライドボラティリティ（Hagan 2002、マイナス金利対応）
+- **オプション価格付け**: Longstaff-Schwartz LSMC（アメリカンオプション）
+- **並列処理**: Rayon によるパス生成の並列化
 - **完全再現性**: ブロック分割 RNG ストリームによりスレッド数に依存せず同一結果を保証
-- **PyTorch / JAX 連携**: DLPack ゼロコピー出力（v0.2 対応予定）
 
 ## インストール
 
@@ -28,23 +31,84 @@ Rust コンパイラは不要です。`pip install` のみで使えます。
 
 ```python
 import stocha
+import numpy as np
 
-# 乱数生成
+# ── 乱数生成 ──────────────────────────────────────────────────────────────
 rng = stocha.RNG(seed=42)
 samples = rng.normal(size=10_000, loc=0.0, scale=1.0)
 
-# GBM による株価シミュレーション
+# ── GBM による株価シミュレーション ────────────────────────────────────────
 paths = stocha.gbm(
-    s0=100.0,    # 初期株価
-    mu=0.05,     # ドリフト（年率 5%）
-    sigma=0.20,  # ボラティリティ（年率 20%）
-    t=1.0,       # 満期 1 年
-    steps=252,   # 営業日ステップ
-    n_paths=100_000,
-    seed=42,
+    s0=100.0, mu=0.05, sigma=0.20,
+    t=1.0, steps=252, n_paths=100_000, seed=42,
 )
 # paths.shape == (100_000, 253)
+
+# ── VaR / CVaR ────────────────────────────────────────────────────────────
+returns = paths[:, -1] / paths[:, 0] - 1
+var, cvar = stocha.var_cvar(returns, confidence=0.95)
+print(f"95% VaR={var:.4f}  CVaR={cvar:.4f}")
+
+# ── ガウスコピュラ ─────────────────────────────────────────────────────────
+corr = np.array([[1.0, 0.8], [0.8, 1.0]])
+u = stocha.gaussian_copula(corr, n_samples=10_000)
+# u.shape == (10_000, 2),  値域 (0, 1)
+
+# ── Student-t コピュラ（テール依存性あり） ────────────────────────────────
+u_t = stocha.student_t_copula(corr, nu=5.0, n_samples=10_000)
+
+# ── Hull-White 短期金利モデル ─────────────────────────────────────────────
+rates = stocha.hull_white(
+    r0=0.05, a=0.1, theta=0.005, sigma=0.01,
+    t=1.0, steps=252, n_paths=10_000,
+)
+# rates.shape == (10_000, 253)
+
+# ── SABR インプライドボラティリティ ──────────────────────────────────────
+iv = stocha.sabr_implied_vol(
+    f=0.05, k=0.05, t=1.0,
+    alpha=0.20, beta=0.5, rho=-0.3, nu=0.4,
+)
+print(f"SABR ATM implied vol: {iv:.4f}")
+
+# ── LSMC によるアメリカンオプション価格付け ───────────────────────────────
+price, std_err = stocha.lsmc_american_option(
+    s0=100.0, k=100.0, r=0.05, sigma=0.20,
+    t=1.0, steps=50, n_paths=50_000,
+)
+print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 ```
+
+## API リファレンス
+
+### 乱数生成
+
+| 関数 / クラス | 説明 |
+|---|---|
+| `RNG(seed)` | PCG64DXSM 擬似乱数生成器 |
+| `RNG.normal(size, loc, scale)` | N(loc, scale²) からサンプリング |
+| `RNG.uniform(size)` | Uniform[0, 1) からサンプリング |
+| `sobol(dim, n_samples)` | Sobol 低差異列（Joe & Kuo 2008） |
+| `halton(dim, n_samples, skip)` | Halton 低差異列 |
+
+### 確率過程モデル
+
+| 関数 | 説明 |
+|---|---|
+| `gbm(s0, mu, sigma, t, steps, n_paths, ...)` | 幾何ブラウン運動（Euler-Maruyama、Rayon 並列） |
+| `heston(s0, v0, mu, kappa, theta, xi, rho, ...)` | Heston ステキャスティックボラティリティ |
+| `merton_jump_diffusion(s0, mu, sigma, lambda_, ...)` | Merton ジャンプ拡散（対数正規ジャンプ） |
+| `hull_white(r0, a, theta, sigma, t, steps, n_paths)` | Hull-White 1因子短期金利（Exact Simulation） |
+
+### リスク・デリバティブ
+
+| 関数 | 説明 |
+|---|---|
+| `var_cvar(returns, confidence)` | Value-at-Risk と Conditional VaR |
+| `gaussian_copula(corr, n_samples)` | ガウスコピュラ サンプル |
+| `student_t_copula(corr, nu, n_samples)` | Student-t コピュラ サンプル |
+| `sabr_implied_vol(f, k, t, alpha, beta, rho, nu, shift)` | SABR Black インプライドボラティリティ |
+| `lsmc_american_option(s0, k, r, sigma, t, steps, n_paths, ...)` | LSMC によるアメリカンオプション価格付け |
 
 ## パフォーマンス（Apple M シリーズ、リリースビルド）
 
@@ -71,8 +135,9 @@ paths = stocha.gbm(
 | バージョン | 機能 |
 |---|---|
 | **v0.1** | PCG64DXSM、正規分布、GBM、対称変量法 |
-| **v0.2** | Sobol 列（Joe & Kuo 2008 + Owen スクランブル）、Halton 列、Heston モデル、Jump-Diffusion |
-| **v1.0** | VaR/CVaR、コピュラ、Hull-White、SABR、LSMC、DLPack ゼロコピー |
+| **v0.2** | Sobol 列（Joe & Kuo 2008）、Halton 列、Heston モデル、Merton Jump-Diffusion |
+| **v0.3** | VaR/CVaR、ガウス/Student-t コピュラ、Hull-White、SABR、LSMC |
+| **v1.0** | Ziggurat サンプラー、DLPack ゼロコピー、キャリブレーション |
 
 ## ライセンス
 

@@ -1,15 +1,22 @@
+mod copula;
 mod dist;
 mod finance;
 mod prng;
 mod qrng;
+mod risk;
 
+use copula::{gaussian_copula_samples, student_t_copula_samples};
 use dist::NormalSampler;
 use finance::gbm::{gbm_paths, GbmParams};
 use finance::heston::{heston_paths, HestonParams};
+use finance::hull_white::{hull_white_paths, HullWhiteParams};
 use finance::jump_diffusion::{merton_paths, MertonParams};
+use finance::lsmc::{lsmc_american_option as lsmc_price, LsmcParams};
+use finance::sabr::sabr_implied_vol as sabr_vol;
 use qrng::{halton_sequence, sobol_sequence};
-use numpy::{IntoPyArray, PyArray1, PyArray2};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use prng::Pcg64Dxsm;
+use risk::var_cvar as compute_var_cvar;
 use pyo3::prelude::*;
 
 /// Python-accessible random number generator backed by PCG64DXSM.
@@ -373,6 +380,271 @@ fn merton_jump_diffusion<'py>(
     Ok(arr.into_pyarray(py))
 }
 
+/// Compute Value-at-Risk and Conditional VaR (Expected Shortfall) from a return series.
+///
+/// Losses are defined as *negative* returns. Both outputs are positive (loss magnitudes).
+///
+/// Args:
+///     returns:    1-D NumPy array of portfolio returns.
+///     confidence: Confidence level in (0, 1), e.g. ``0.95`` for 95% VaR.
+///
+/// Returns:
+///     ``(var, cvar)`` tuple of floats.
+///
+/// Example:
+///     >>> returns = paths[:, -1] / paths[:, 0] - 1
+///     >>> var, cvar = stocha.var_cvar(returns, confidence=0.95)
+#[pyfunction]
+fn var_cvar<'py>(
+    returns: PyReadonlyArray1<'py, f64>,
+    confidence: f64,
+) -> PyResult<(f64, f64)> {
+    if confidence <= 0.0 || confidence >= 1.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "confidence must be in (0, 1)",
+        ));
+    }
+    let arr = returns.as_array();
+    if arr.is_empty() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "returns must not be empty",
+        ));
+    }
+    let slice: Vec<f64> = arr.iter().copied().collect();
+    Ok(compute_var_cvar(&slice, confidence))
+}
+
+/// Sample from a Gaussian copula with a given correlation matrix.
+///
+/// Args:
+///     corr:      2-D NumPy array of shape ``(dim, dim)``, a valid correlation matrix.
+///     n_samples: Number of samples to draw.
+///     seed:      Random seed (default ``42``).
+///
+/// Returns:
+///     NumPy array of shape ``(n_samples, dim)`` with values in ``(0, 1)``.
+///
+/// Example:
+///     >>> import numpy as np
+///     >>> corr = np.array([[1.0, 0.8], [0.8, 1.0]])
+///     >>> u = stocha.gaussian_copula(corr, n_samples=1000)
+#[pyfunction]
+#[pyo3(signature = (corr, n_samples, seed=42))]
+fn gaussian_copula<'py>(
+    py: Python<'py>,
+    corr: PyReadonlyArray2<'py, f64>,
+    n_samples: usize,
+    seed: u64,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    let arr = corr.as_array();
+    let result = py
+        .detach(|| gaussian_copula_samples(arr, n_samples, seed as u128))
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+    let shape = [result.shape()[0], result.shape()[1]];
+    let flat: Vec<f64> = result.into_raw_vec_and_offset().0;
+    let out = numpy::ndarray::Array2::from_shape_vec(shape, flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    Ok(out.into_pyarray(py))
+}
+
+/// Sample from a Student-t copula with a given correlation matrix.
+///
+/// Args:
+///     corr:      2-D NumPy array of shape ``(dim, dim)``, a valid correlation matrix.
+///     nu:        Degrees of freedom (must be > 2 for finite variance).
+///     n_samples: Number of samples to draw.
+///     seed:      Random seed (default ``42``).
+///
+/// Returns:
+///     NumPy array of shape ``(n_samples, dim)`` with values in ``(0, 1)``.
+#[pyfunction]
+#[pyo3(signature = (corr, nu, n_samples, seed=42))]
+fn student_t_copula<'py>(
+    py: Python<'py>,
+    corr: PyReadonlyArray2<'py, f64>,
+    nu: f64,
+    n_samples: usize,
+    seed: u64,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    if nu <= 2.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("nu must be > 2"));
+    }
+    let arr = corr.as_array();
+    let result = py
+        .detach(|| student_t_copula_samples(arr, nu, n_samples, seed as u128))
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+    let shape = [result.shape()[0], result.shape()[1]];
+    let flat: Vec<f64> = result.into_raw_vec_and_offset().0;
+    let out = numpy::ndarray::Array2::from_shape_vec(shape, flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    Ok(out.into_pyarray(py))
+}
+
+/// Simulate Hull-White 1-factor short-rate paths via Exact Simulation.
+///
+/// Model: dr = (theta - a*r)*dt + sigma*dW
+///
+/// Uses the exact Gaussian transition (zero discretization bias).
+/// The long-run mean rate is ``theta / a``.
+///
+/// Args:
+///     r0:      Initial short rate.
+///     a:       Mean-reversion speed (must be > 0).
+///     theta:   Product ``a * long_run_mean`` (i.e. the drift constant).
+///     sigma:   Volatility of the short rate (must be > 0).
+///     t:       Time horizon in years (must be > 0).
+///     steps:   Number of time steps.
+///     n_paths: Number of simulation paths.
+///     seed:    Random seed (default ``42``).
+///
+/// Returns:
+///     NumPy array of shape ``(n_paths, steps + 1)``.
+///     Column 0 is the initial rate ``r0``.
+///
+/// Example:
+///     >>> rates = stocha.hull_white(r0=0.05, a=0.1, theta=0.005, sigma=0.01,
+///     ...                           t=1.0, steps=252, n_paths=10000)
+#[pyfunction]
+#[pyo3(signature = (r0, a, theta, sigma, t, steps, n_paths, seed=42))]
+fn hull_white<'py>(
+    py: Python<'py>,
+    r0: f64,
+    a: f64,
+    theta: f64,
+    sigma: f64,
+    t: f64,
+    steps: usize,
+    n_paths: usize,
+    seed: u64,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    if a <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("a must be positive"));
+    }
+    if sigma <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("sigma must be positive"));
+    }
+    if t <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+    }
+    if steps == 0 || n_paths == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "steps and n_paths must be positive",
+        ));
+    }
+
+    let params = HullWhiteParams { r0, a, theta, sigma, t, steps, n_paths };
+    let result = py.detach(|| hull_white_paths(&params, seed as u128));
+    let shape = [result.shape()[0], result.shape()[1]];
+    let flat: Vec<f64> = result.into_raw_vec_and_offset().0;
+    let arr = numpy::ndarray::Array2::from_shape_vec(shape, flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray(py))
+}
+
+/// Compute the Black implied volatility using the SABR model (Hagan et al. 2002).
+///
+/// Supports negative rates via the Shifted SABR approach (add ``shift`` to F and K).
+///
+/// Args:
+///     f:     Forward price or rate.
+///     k:     Strike price or rate.
+///     t:     Time to expiry in years (must be > 0).
+///     alpha: Initial volatility level (must be > 0).
+///     beta:  CEV exponent in [0, 1].  ``beta=1`` → lognormal, ``beta=0`` → normal.
+///     rho:   Correlation between forward and vol Brownians (in (-1, 1)).
+///     nu:    Vol-of-vol (must be >= 0).
+///     shift: Shift for negative-rate support (default ``0.0``).
+///
+/// Returns:
+///     Black (lognormal) implied volatility as a float.
+///
+/// Example:
+///     >>> iv = stocha.sabr_implied_vol(f=0.05, k=0.05, t=1.0,
+///     ...                              alpha=0.20, beta=0.5, rho=-0.3, nu=0.4)
+#[pyfunction]
+#[pyo3(signature = (f, k, t, alpha, beta, rho, nu, shift=0.0))]
+fn sabr_implied_vol<'py>(
+    f: f64,
+    k: f64,
+    t: f64,
+    alpha: f64,
+    beta: f64,
+    rho: f64,
+    nu: f64,
+    shift: f64,
+) -> PyResult<f64> {
+    sabr_vol(f, k, t, alpha, beta, rho, nu, shift)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+}
+
+/// Price an American option via Longstaff-Schwartz Monte Carlo (LSMC).
+///
+/// Simulates GBM paths under the risk-neutral measure, then uses backward
+/// induction with least-squares regression (polynomial basis, QR solver)
+/// to determine optimal early-exercise boundaries.
+///
+/// Args:
+///     s0:         Initial asset price (must be > 0).
+///     k:          Strike price (must be > 0).
+///     r:          Risk-free rate (annualized).
+///     sigma:      Volatility (annualized, must be > 0).
+///     t:          Time to maturity in years (must be > 0).
+///     steps:      Number of exercise opportunities (time steps).
+///     n_paths:    Number of simulation paths.
+///     is_put:     ``True`` for put, ``False`` for call (default ``True``).
+///     poly_degree: Polynomial degree for basis functions (1–4, default ``3``).
+///     seed:       Random seed (default ``42``).
+///
+/// Returns:
+///     ``(price, std_err)`` tuple.
+///
+/// Example:
+///     >>> price, err = stocha.lsmc_american_option(
+///     ...     s0=100.0, k=100.0, r=0.05, sigma=0.20, t=1.0,
+///     ...     steps=50, n_paths=50000)
+#[pyfunction]
+#[pyo3(signature = (s0, k, r, sigma, t, steps, n_paths, is_put=true, poly_degree=3, seed=42))]
+fn lsmc_american_option<'py>(
+    py: Python<'py>,
+    s0: f64,
+    k: f64,
+    r: f64,
+    sigma: f64,
+    t: f64,
+    steps: usize,
+    n_paths: usize,
+    is_put: bool,
+    poly_degree: usize,
+    seed: u64,
+) -> PyResult<(f64, f64)> {
+    if s0 <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("s0 must be positive"));
+    }
+    if k <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("k must be positive"));
+    }
+    if sigma <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("sigma must be positive"));
+    }
+    if t <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+    }
+    if steps == 0 || n_paths == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "steps and n_paths must be positive",
+        ));
+    }
+    if poly_degree == 0 || poly_degree > 4 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "poly_degree must be in [1, 4]",
+        ));
+    }
+
+    let params = LsmcParams { s0, k, r, sigma, t, steps, n_paths, is_put, poly_degree };
+    let (price, std_err) = py.detach(|| lsmc_price(&params, seed as u128));
+    Ok((price, std_err))
+}
+
 /// stocha: High-performance random number and financial simulation library.
 #[pymodule]
 fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -382,6 +654,12 @@ fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(halton_seq, m)?)?;
     m.add_function(wrap_pyfunction!(heston, m)?)?;
     m.add_function(wrap_pyfunction!(merton_jump_diffusion, m)?)?;
-    m.add("__version__", "0.2.0")?;
+    m.add_function(wrap_pyfunction!(var_cvar, m)?)?;
+    m.add_function(wrap_pyfunction!(gaussian_copula, m)?)?;
+    m.add_function(wrap_pyfunction!(student_t_copula, m)?)?;
+    m.add_function(wrap_pyfunction!(hull_white, m)?)?;
+    m.add_function(wrap_pyfunction!(sabr_implied_vol, m)?)?;
+    m.add_function(wrap_pyfunction!(lsmc_american_option, m)?)?;
+    m.add("__version__", "0.3.0")?;
     Ok(())
 }

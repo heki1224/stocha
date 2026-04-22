@@ -23,6 +23,12 @@ from stocha._stocha import sobol as _sobol
 from stocha._stocha import halton as _halton
 from stocha._stocha import heston as _heston
 from stocha._stocha import merton_jump_diffusion as _merton_jump_diffusion
+from stocha._stocha import var_cvar as _var_cvar
+from stocha._stocha import gaussian_copula as _gaussian_copula
+from stocha._stocha import student_t_copula as _student_t_copula
+from stocha._stocha import hull_white as _hull_white
+from stocha._stocha import sabr_implied_vol as _sabr_implied_vol
+from stocha._stocha import lsmc_american_option as _lsmc_american_option
 from stocha._stocha import __version__
 
 __all__ = [
@@ -32,6 +38,12 @@ __all__ = [
     "halton",
     "heston",
     "merton_jump_diffusion",
+    "var_cvar",
+    "gaussian_copula",
+    "student_t_copula",
+    "hull_white",
+    "sabr_implied_vol",
+    "lsmc_american_option",
     "__version__",
 ]
 
@@ -304,4 +316,202 @@ def merton_jump_diffusion(
         s0=s0, mu=mu, sigma=sigma, lambda_=lambda_,
         mu_j=mu_j, sigma_j=sigma_j, t=t, steps=steps,
         n_paths=n_paths, seed=seed,
+    )
+
+
+def var_cvar(
+    returns: np.ndarray,
+    confidence: float,
+) -> tuple[float, float]:
+    """Compute Value-at-Risk and Conditional VaR (Expected Shortfall).
+
+    Losses are defined as *negative* returns. Both outputs are positive
+    (they represent loss magnitudes, not signed P&L).
+
+    Args:
+        returns:    1-D NumPy array of portfolio returns.
+        confidence: Confidence level in (0, 1). E.g. ``0.95`` for 95% VaR.
+
+    Returns:
+        ``(var, cvar)`` where both values are positive loss magnitudes.
+
+    Example:
+        >>> paths = gbm(s0=100.0, mu=0.05, sigma=0.2, t=1.0, steps=252, n_paths=10000)
+        >>> returns = paths[:, -1] / paths[:, 0] - 1
+        >>> var, cvar = var_cvar(returns, confidence=0.95)
+    """
+    return _var_cvar(np.asarray(returns, dtype=np.float64), confidence)
+
+
+def gaussian_copula(
+    corr: np.ndarray,
+    n_samples: int,
+    seed: int = 42,
+) -> np.ndarray:
+    """Sample from a Gaussian copula with a given correlation matrix.
+
+    Args:
+        corr:      2-D NumPy array of shape ``(dim, dim)``.
+                   Must be a valid positive-definite correlation matrix.
+        n_samples: Number of samples to draw.
+        seed:      Random seed (default ``42``).
+
+    Returns:
+        NumPy array of shape ``(n_samples, dim)`` with values in ``(0, 1)``.
+
+    Example:
+        >>> import numpy as np
+        >>> corr = np.array([[1.0, 0.8], [0.8, 1.0]])
+        >>> u = gaussian_copula(corr, n_samples=1000)
+    """
+    return _gaussian_copula(
+        np.asarray(corr, dtype=np.float64), n_samples=n_samples, seed=seed
+    )
+
+
+def student_t_copula(
+    corr: np.ndarray,
+    nu: float,
+    n_samples: int,
+    seed: int = 42,
+) -> np.ndarray:
+    """Sample from a Student-t copula with a given correlation matrix.
+
+    Heavier tails than the Gaussian copula — captures joint extreme events.
+
+    Args:
+        corr:      2-D NumPy array of shape ``(dim, dim)``.
+                   Must be a valid positive-definite correlation matrix.
+        nu:        Degrees of freedom (must be > 2 for finite variance).
+        n_samples: Number of samples to draw.
+        seed:      Random seed (default ``42``).
+
+    Returns:
+        NumPy array of shape ``(n_samples, dim)`` with values in ``(0, 1)``.
+    """
+    return _student_t_copula(
+        np.asarray(corr, dtype=np.float64), nu=nu, n_samples=n_samples, seed=seed
+    )
+
+
+def hull_white(
+    r0: float,
+    a: float,
+    theta: float,
+    sigma: float,
+    t: float,
+    steps: int,
+    n_paths: int,
+    seed: int = 42,
+) -> np.ndarray:
+    """Simulate Hull-White 1-factor short-rate paths via Exact Simulation.
+
+    Model: ``dr = (theta - a*r)*dt + sigma*dW``
+
+    Uses the exact Gaussian transition (zero discretization bias).
+    The long-run mean rate is ``theta / a``.
+
+    Args:
+        r0:      Initial short rate.
+        a:       Mean-reversion speed (must be > 0).
+        theta:   Drift constant equal to ``a * long_run_mean``.
+        sigma:   Volatility of the short rate (must be > 0).
+        t:       Time horizon in years (must be > 0).
+        steps:   Number of time steps.
+        n_paths: Number of simulation paths.
+        seed:    Random seed (default ``42``).
+
+    Returns:
+        NumPy array of shape ``(n_paths, steps + 1)``.
+        Column 0 is the initial rate ``r0``.
+
+    Example:
+        >>> rates = hull_white(r0=0.05, a=0.1, theta=0.005,
+        ...                    sigma=0.01, t=1.0, steps=252, n_paths=10000)
+        >>> rates.shape
+        (10000, 253)
+    """
+    return _hull_white(
+        r0=r0, a=a, theta=theta, sigma=sigma,
+        t=t, steps=steps, n_paths=n_paths, seed=seed,
+    )
+
+
+def sabr_implied_vol(
+    f: float,
+    k: float,
+    t: float,
+    alpha: float,
+    beta: float,
+    rho: float,
+    nu: float,
+    shift: float = 0.0,
+) -> float:
+    """Compute the Black implied volatility using the SABR model.
+
+    Uses the Hagan et al. (2002) approximation formula.
+    Supports negative rates via the Shifted SABR approach.
+
+    Args:
+        f:     Forward price or rate.
+        k:     Strike price or rate.
+        t:     Time to expiry in years (must be > 0).
+        alpha: Initial volatility (must be > 0).
+        beta:  CEV exponent in [0, 1]. ``1`` = lognormal, ``0`` = normal.
+        rho:   Correlation between forward and vol Brownians (in (-1, 1)).
+        nu:    Vol-of-vol (must be >= 0).
+        shift: Shift for negative-rate support (default ``0.0``).
+
+    Returns:
+        Black (lognormal) implied volatility as a float.
+
+    Example:
+        >>> iv = sabr_implied_vol(f=0.05, k=0.05, t=1.0,
+        ...                       alpha=0.20, beta=0.5, rho=-0.3, nu=0.4)
+    """
+    return _sabr_implied_vol(f=f, k=k, t=t, alpha=alpha, beta=beta,
+                             rho=rho, nu=nu, shift=shift)
+
+
+def lsmc_american_option(
+    s0: float,
+    k: float,
+    r: float,
+    sigma: float,
+    t: float,
+    steps: int,
+    n_paths: int,
+    is_put: bool = True,
+    poly_degree: int = 3,
+    seed: int = 42,
+) -> tuple[float, float]:
+    """Price an American option via Longstaff-Schwartz Monte Carlo (LSMC).
+
+    Simulates GBM paths under the risk-neutral measure, then applies backward
+    induction with polynomial least-squares regression (QR decomposition) to
+    determine the optimal early-exercise boundary.
+
+    Args:
+        s0:         Initial asset price (must be > 0).
+        k:          Strike price (must be > 0).
+        r:          Risk-free rate (annualized).
+        sigma:      Volatility (annualized, must be > 0).
+        t:          Time to maturity in years (must be > 0).
+        steps:      Number of exercise opportunities (time steps).
+        n_paths:    Number of simulation paths.
+        is_put:     ``True`` for put option, ``False`` for call (default ``True``).
+        poly_degree: Polynomial degree for basis functions (1–4, default ``3``).
+        seed:       Random seed (default ``42``).
+
+    Returns:
+        ``(price, std_err)`` tuple.
+
+    Example:
+        >>> price, err = lsmc_american_option(
+        ...     s0=100.0, k=100.0, r=0.05, sigma=0.20, t=1.0,
+        ...     steps=50, n_paths=50000)
+    """
+    return _lsmc_american_option(
+        s0=s0, k=k, r=r, sigma=sigma, t=t, steps=steps,
+        n_paths=n_paths, is_put=is_put, poly_degree=poly_degree, seed=seed,
     )
