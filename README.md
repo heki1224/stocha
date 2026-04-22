@@ -21,8 +21,19 @@
 
 ## Installation
 
+**PyPI (coming soon):**
+
 ```bash
 pip install stocha
+```
+
+**From source (current):**
+
+```bash
+git clone https://github.com/heki1224/stocha.git
+cd stocha
+pip install maturin
+maturin develop --release
 ```
 
 ## Quick Start
