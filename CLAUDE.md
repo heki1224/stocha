@@ -24,7 +24,7 @@ src/               # Rust source (PyO3 extension)
   lib.rs           # Module registration + into_py_array2 helper
   prng/            # PCG64DXSM RNG
   qrng/            # Sobol / Halton quasi-random sequences
-  finance/         # GBM, Heston, Merton, Hull-White, SABR, LSMC
+  finance/         # GBM, Heston, jump_diffusion (Merton), Hull-White, SABR, LSMC
   risk/            # VaR / CVaR
   copula/          # Gaussian / Student-t copulas
   dist/            # Probability distributions (norm_ppf, etc.)
