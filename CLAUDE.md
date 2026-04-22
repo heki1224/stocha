@@ -30,7 +30,11 @@ src/               # Rust source (PyO3 extension)
   dist/            # Probability distributions (norm_ppf, etc.)
 python/stocha/
   __init__.py      # Public Python API (wraps Rust via _stocha)
-tests/             # pytest test suite
+tests/
+  test_rng.py      # RNG, Sobol, Halton (src/prng/, src/qrng/)
+  test_models.py   # GBM, Heston, Merton, Hull-White, SABR, LSMC (src/finance/)
+  test_risk.py     # VaR/CVaR, copulas (src/risk/, src/copula/)
+examples/          # Bilingual tutorials (*.py + *.ja.py), 01–07
 tasks/lessons.md   # Accumulated lessons from past sessions
 CHANGELOG.md       # Version history (source of truth for release notes)
 ```
@@ -61,3 +65,4 @@ CHANGELOG.md       # Version history (source of truth for release notes)
 - SABR tests: always use `F >> alpha` + near-the-money strikes (low forward + high alpha breaks the Hagan approximation)
 - Crate versions: run `cargo search <crate>` before writing Cargo.toml; faer and rand ecosystems evolve fast
 - `.gitignore`: use `/dist/` (root-anchored), not bare `dist/` — the latter silently ignores `src/dist/`
+- Doc sync: when adding features or bumping versions, update README.md + README.ja.md (Features, Quick Start, API table, Tutorials) and SECURITY.md (Supported Versions) in the same session
