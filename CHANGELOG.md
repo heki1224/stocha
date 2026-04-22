@@ -21,10 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Merton Jump-Diffusion** (`stocha.merton_jump_diffusion(...)`): Lognormal jump sizes
   with Poisson arrivals (Bernoulli approximation); martingale compensator applied
 
-### Changed
-
-- Version bumped to `0.2.0`
-
 ## [0.1.0] - 2026-04-22
 
 ### Added
@@ -48,5 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `standard_normal(10M samples)` | ~155M samples/sec |
 | `gbm(n_paths=100k, steps=252)` | ~680k paths/sec |
 
-[Unreleased]: https://github.com/heki1224/stocha/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/heki1224/stocha/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/heki1224/stocha/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/heki1224/stocha/releases/tag/v0.1.0
