@@ -117,6 +117,7 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | 関数 / クラス | 説明 |
 |---|---|
 | `RNG(seed)` | PCG64DXSM 擬似乱数生成器（`seed` は 128 ビット整数まで対応） |
+| `RNG.standard_normal(size)` | N(0, 1) からサンプリング |
 | `RNG.normal(size, loc, scale)` | N(loc, scale²) からサンプリング |
 | `RNG.uniform(size)` | Uniform[0, 1) からサンプリング |
 | `RNG.save_state()` | シードを JSON 文字列にシリアライズ（ストリーム位置ではなくシード値のみ記録） |
@@ -129,7 +130,7 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | 関数 | 説明 |
 |---|---|
 | `gbm(s0, mu, sigma, t, steps, n_paths, ...)` | 幾何ブラウン運動（Euler-Maruyama、Rayon 並列） |
-| `heston(s0, v0, mu, kappa, theta, xi, rho, ...)` | Heston ステキャスティックボラティリティ |
+| `heston(s0, v0, mu, kappa, theta, xi, rho, ...)` | Heston ストキャスティックボラティリティ（Full Truncation スキーム） |
 | `merton_jump_diffusion(s0, mu, sigma, lambda_, ...)` | Merton ジャンプ拡散（対数正規ジャンプ） |
 | `hull_white(r0, a, theta, sigma, t, steps, n_paths)` | Hull-White 1因子短期金利（Exact Simulation） |
 

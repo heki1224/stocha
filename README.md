@@ -36,6 +36,8 @@ pip install maturin
 maturin develop --release
 ```
 
+Once available on PyPI, no Rust compiler is required — `pip install stocha` handles everything.
+
 ## Quick Start
 
 ```python
@@ -115,6 +117,7 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 | Function / Class | Description |
 |---|---|
 | `RNG(seed)` | PCG64DXSM PRNG; `seed` accepts integers up to 128-bit |
+| `RNG.standard_normal(size)` | Sample from N(0, 1) |
 | `RNG.normal(size, loc, scale)` | Sample from N(loc, scale²) |
 | `RNG.uniform(size)` | Sample from Uniform[0, 1) |
 | `RNG.save_state()` | Serialize seed to JSON string (records seed only, not stream position) |
@@ -161,6 +164,12 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 | `examples/07_american_option.py` | LSMC American option pricing, early exercise premium |
 
 Each example has a Japanese counterpart (`*.ja.py`).
+
+## Who Is This For?
+
+- Students and researchers in quantitative finance and financial engineering
+- Quantitative analysts and risk management practitioners
+- AI/ML engineers working on diffusion models or MCMC
 
 ## Roadmap
 
