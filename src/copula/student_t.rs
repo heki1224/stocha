@@ -132,6 +132,8 @@ pub fn student_t_copula_samples(
     n_samples: usize,
     seed: u128,
 ) -> Result<Array2<f64>, String> {
+    // Also validated in the Python binding, but retained here so the Rust API
+    // is safe when called directly without going through PyO3.
     if nu <= 2.0 {
         return Err("nu must be > 2 for finite variance".into());
     }

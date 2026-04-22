@@ -80,4 +80,24 @@ mod tests {
         let terminal_mean = paths.column(100).mean().unwrap();
         assert!((terminal_mean - 0.05).abs() < 0.01, "mean={}", terminal_mean);
     }
+
+    #[test]
+    fn test_hull_white_negative_initial_rate() {
+        // Negative initial rate (e.g. EUR/CHF negative rate environment).
+        // Exact simulation handles r0 < 0 without special treatment.
+        let params = HullWhiteParams {
+            r0: -0.01, a: 0.5, theta: 0.02, sigma: 0.005,
+            t: 5.0, steps: 60, n_paths: 500,
+        };
+        let paths = hull_white_paths(&params, 7);
+        assert_eq!(paths.shape(), [500, 61]);
+        // First column should equal r0.
+        for i in 0..500 {
+            assert!((paths[[i, 0]] - (-0.01)).abs() < 1e-12);
+        }
+        // Terminal mean should drift toward theta/a = 0.04.
+        let terminal_mean = paths.column(60).mean().unwrap();
+        assert!(terminal_mean > -0.05 && terminal_mean < 0.10,
+            "terminal_mean={} unexpectedly far from long-run mean", terminal_mean);
+    }
 }

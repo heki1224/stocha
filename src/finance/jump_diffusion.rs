@@ -162,4 +162,22 @@ mod tests {
         let rel_err = (mean_terminal - expected).abs() / expected;
         assert!(rel_err < 0.02, "rel_err={:.4}", rel_err);
     }
+
+    #[test]
+    fn test_lambda_zero_equals_gbm() {
+        // lambda=0 eliminates all jumps; model reduces to plain GBM.
+        // E[S(T)] = S0 * exp(mu * T) with tight tolerance (no jump noise).
+        let params = MertonParams {
+            lambda: 0.0,
+            n_paths: 100_000,
+            ..default_params()
+        };
+        let paths = merton_paths(&params, 0);
+        let mean_terminal = paths.column(params.steps).mean().unwrap();
+        let expected = params.s0 * (params.mu * params.t).exp();
+        let rel_err = (mean_terminal - expected).abs() / expected;
+        assert!(rel_err < 0.01, "lambda=0 rel_err={:.4}", rel_err);
+        // All prices must be positive (same guarantee as GBM).
+        assert!(paths.iter().all(|&v| v > 0.0));
+    }
 }

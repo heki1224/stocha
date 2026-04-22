@@ -119,11 +119,36 @@ class RNG:
         return self._inner.normal(size=size, loc=loc, scale=scale)
 
     def save_state(self) -> str:
-        """Serialize the current RNG state to a JSON string.
+        """Serialize the seed to a JSON string.
 
-        Can be used for checkpointing and audit trails.
+        **Limitation**: records the *original seed only*, not the full internal
+        generator state. Restoring via :meth:`from_state` reconstructs the RNG
+        from scratch — it replays the sequence **from the beginning**, not from
+        the position at which ``save_state`` was called.
+
+        Returns:
+            JSON string, e.g. ``'{"seed":42}'``.
         """
         return self._inner.save_state()
+
+    @classmethod
+    def from_state(cls, json: str) -> "RNG":
+        """Restore an RNG from a JSON string produced by :meth:`save_state`.
+
+        The restored RNG is identical to ``RNG(seed=original_seed)`` — it starts
+        from the beginning of the sequence regardless of how far the original RNG
+        had advanced.
+
+        Args:
+            json: JSON string as returned by :meth:`save_state`.
+
+        Returns:
+            New ``RNG`` instance seeded from the recorded value.
+        """
+        inner = _RNG.from_state(json)
+        obj = cls.__new__(cls)
+        obj._inner = inner
+        return obj
 
     def __repr__(self) -> str:
         return f"RNG(seed={self.seed}, algorithm='pcg64dxsm')"

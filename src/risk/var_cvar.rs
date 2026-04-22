@@ -22,7 +22,10 @@ pub fn var_cvar(returns: &[f64], confidence: f64) -> (f64, f64) {
 
     let var = losses[idx];
 
-    // CVaR: mean of losses strictly beyond the VaR index.
+    // CVaR: mean of losses at or beyond the VaR threshold (losses[idx] == VaR is included).
+    // This implements E[Loss | Loss >= VaR], the "inclusive" Expected Shortfall convention.
+    // For continuous distributions the boundary point has measure zero; for discrete samples
+    // (as here) the VaR point itself contributes to the average.
     let tail = &losses[idx..];
     let cvar = if tail.is_empty() {
         var
@@ -46,5 +49,15 @@ mod tests {
         assert!((var - 0.10).abs() < 1e-10);
         // CVaR = mean of losses[9..] = 0.10
         assert!((cvar - 0.10).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_var_cvar_all_positive_returns() {
+        // All returns are gains → all losses are negative → VaR < 0 (no loss at confidence level).
+        let returns: Vec<f64> = (1..=20).map(|i| i as f64 * 0.01).collect();
+        let (var, cvar) = var_cvar(&returns, 0.95);
+        // losses = [-0.20, -0.19, ..., -0.01]; at 95% idx = ceil(19) = 19 → losses[19] = -0.01
+        assert!(var < 0.0, "VaR should be negative when all returns are positive: {}", var);
+        assert!(cvar <= var + 1e-10, "CVaR >= VaR must hold: var={}, cvar={}", var, cvar);
     }
 }

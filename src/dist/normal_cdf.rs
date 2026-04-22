@@ -12,8 +12,9 @@ pub fn norm_cdf(x: f64) -> f64 {
 }
 
 /// Inverse standard normal CDF (probit) using rational approximation.
-#[allow(dead_code)]
+///
 /// Based on Peter Acklam's algorithm. Max error < 1.15e-9.
+#[allow(dead_code)]
 pub fn norm_ppf(p: f64) -> f64 {
     const A: [f64; 6] = [
         -3.969683028665376e+01,  2.209460984245205e+02,

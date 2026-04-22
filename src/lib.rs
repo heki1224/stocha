@@ -15,9 +15,19 @@ use finance::lsmc::{lsmc_american_option as lsmc_price, LsmcParams};
 use finance::sabr::sabr_implied_vol as sabr_vol;
 use qrng::{halton_sequence, sobol_sequence};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use ndarray::Array2;
 use prng::Pcg64Dxsm;
 use risk::var_cvar as compute_var_cvar;
 use pyo3::prelude::*;
+
+/// Convert an owned `Array2<f64>` into a Python NumPy array.
+fn into_py_array2<'py>(arr: Array2<f64>, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    let shape = [arr.shape()[0], arr.shape()[1]];
+    let flat: Vec<f64> = arr.into_raw_vec_and_offset().0;
+    let out = Array2::from_shape_vec(shape, flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    Ok(out.into_pyarray(py))
+}
 
 /// Python-accessible random number generator backed by PCG64DXSM.
 #[pyclass]
@@ -31,15 +41,15 @@ impl RNG {
     /// Create a new RNG.
     ///
     /// Args:
-    ///     seed:      Integer seed for reproducibility (default 0).
+    ///     seed:      Integer seed for reproducibility (default 0). Accepts up to 128-bit integers.
     ///     algorithm: Algorithm name. Currently only "pcg64dxsm" is supported.
     #[new]
     #[pyo3(signature = (seed=0, algorithm="pcg64dxsm"))]
-    fn new(seed: u64, algorithm: &str) -> PyResult<Self> {
+    fn new(seed: u128, algorithm: &str) -> PyResult<Self> {
         match algorithm {
             "pcg64dxsm" | "default" => Ok(RNG {
-                inner: Pcg64Dxsm::new(seed as u128),
-                seed: seed as u128,
+                inner: Pcg64Dxsm::new(seed),
+                seed,
             }),
             other => Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Unknown algorithm: '{}'. Supported: 'pcg64dxsm'",
@@ -50,8 +60,8 @@ impl RNG {
 
     /// The seed used to initialize this RNG.
     #[getter]
-    fn seed(&self) -> u64 {
-        self.seed as u64
+    fn seed(&self) -> u128 {
+        self.seed
     }
 
     /// Generate `size` samples from Uniform[0, 1) as a NumPy array.
@@ -99,9 +109,38 @@ impl RNG {
         Ok(buf.into_pyarray(py))
     }
 
-    /// Serialize the current RNG state to a JSON string for checkpointing.
+    /// Serialize the seed to a JSON string.
+    ///
+    /// **Important limitation**: records the *original seed only*, not the full
+    /// internal generator state. Restoring via ``from_state`` reconstructs the RNG
+    /// from scratch (equivalent to ``RNG(seed=original_seed)``), which replays the
+    /// sequence **from the beginning** — not from the position at which ``save_state``
+    /// was called. Suitable for audit trails and fixed-seed reproducibility; not for
+    /// mid-stream checkpointing.
+    ///
+    /// Returns:
+    ///     JSON string, e.g. ``'{"seed":42}'``.
     fn save_state(&self) -> String {
         self.inner.save_state()
+    }
+
+    /// Restore an RNG from a JSON string produced by :meth:`save_state`.
+    ///
+    /// The restored RNG is identical to ``RNG(seed=original_seed)`` — it starts
+    /// from the beginning of the sequence regardless of how far the original RNG
+    /// had advanced. See :meth:`save_state` for the full limitation description.
+    ///
+    /// Args:
+    ///     json: JSON string as returned by :meth:`save_state`.
+    ///
+    /// Returns:
+    ///     New ``RNG`` instance seeded from the recorded value.
+    #[staticmethod]
+    fn from_state(json: &str) -> PyResult<RNG> {
+        let inner = Pcg64Dxsm::from_state(json)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        let seed = inner.seed();
+        Ok(RNG { inner, seed })
     }
 
     fn __repr__(&self) -> String {
@@ -164,12 +203,7 @@ fn gbm<'py>(
 
     let params = GbmParams { s0, mu, sigma, t, steps, n_paths, antithetic };
     let result = py.detach(|| gbm_paths(&params, seed as u128));
-
-    let shape = [result.shape()[0], result.shape()[1]];
-    let flat: Vec<f64> = result.into_raw_vec_and_offset().0;
-    let arr = numpy::ndarray::Array2::from_shape_vec(shape, flat)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(arr.into_pyarray(py))
+    into_py_array2(result, py)
 }
 
 /// Generate a Sobol low-discrepancy sequence using Joe & Kuo 2008 direction numbers.
@@ -192,12 +226,7 @@ fn sobol<'py>(
     let arr = py
         .detach(|| sobol_sequence(dim, n_samples))
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
-
-    let shape = [arr.shape()[0], arr.shape()[1]];
-    let flat: Vec<f64> = arr.into_raw_vec_and_offset().0;
-    let out = numpy::ndarray::Array2::from_shape_vec(shape, flat)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(out.into_pyarray(py))
+    into_py_array2(arr, py)
 }
 
 /// Generate a Halton low-discrepancy sequence.
@@ -223,12 +252,7 @@ fn halton_seq<'py>(
     let arr = py
         .detach(|| halton_sequence(dim, n_samples, skip))
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
-
-    let shape = [arr.shape()[0], arr.shape()[1]];
-    let flat: Vec<f64> = arr.into_raw_vec_and_offset().0;
-    let out = numpy::ndarray::Array2::from_shape_vec(shape, flat)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(out.into_pyarray(py))
+    into_py_array2(arr, py)
 }
 
 /// Simulate Heston stochastic volatility paths.
@@ -296,12 +320,7 @@ fn heston<'py>(
 
     let params = HestonParams { s0, v0, mu, kappa, theta, xi, rho, t, steps, n_paths };
     let result = py.detach(|| heston_paths(&params, seed as u128));
-
-    let shape = [result.shape()[0], result.shape()[1]];
-    let flat: Vec<f64> = result.into_raw_vec_and_offset().0;
-    let arr = numpy::ndarray::Array2::from_shape_vec(shape, flat)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(arr.into_pyarray(py))
+    into_py_array2(result, py)
 }
 
 /// Simulate Merton Jump-Diffusion paths.
@@ -372,12 +391,7 @@ fn merton_jump_diffusion<'py>(
         n_paths,
     };
     let result = py.detach(|| merton_paths(&params, seed as u128));
-
-    let shape = [result.shape()[0], result.shape()[1]];
-    let flat: Vec<f64> = result.into_raw_vec_and_offset().0;
-    let arr = numpy::ndarray::Array2::from_shape_vec(shape, flat)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(arr.into_pyarray(py))
+    into_py_array2(result, py)
 }
 
 /// Compute Value-at-Risk and Conditional VaR (Expected Shortfall) from a return series.
@@ -440,11 +454,7 @@ fn gaussian_copula<'py>(
     let result = py
         .detach(|| gaussian_copula_samples(arr, n_samples, seed as u128))
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
-    let shape = [result.shape()[0], result.shape()[1]];
-    let flat: Vec<f64> = result.into_raw_vec_and_offset().0;
-    let out = numpy::ndarray::Array2::from_shape_vec(shape, flat)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(out.into_pyarray(py))
+    into_py_array2(result, py)
 }
 
 /// Sample from a Student-t copula with a given correlation matrix.
@@ -473,11 +483,7 @@ fn student_t_copula<'py>(
     let result = py
         .detach(|| student_t_copula_samples(arr, nu, n_samples, seed as u128))
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
-    let shape = [result.shape()[0], result.shape()[1]];
-    let flat: Vec<f64> = result.into_raw_vec_and_offset().0;
-    let out = numpy::ndarray::Array2::from_shape_vec(shape, flat)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(out.into_pyarray(py))
+    into_py_array2(result, py)
 }
 
 /// Simulate Hull-White 1-factor short-rate paths via Exact Simulation.
@@ -534,11 +540,7 @@ fn hull_white<'py>(
 
     let params = HullWhiteParams { r0, a, theta, sigma, t, steps, n_paths };
     let result = py.detach(|| hull_white_paths(&params, seed as u128));
-    let shape = [result.shape()[0], result.shape()[1]];
-    let flat: Vec<f64> = result.into_raw_vec_and_offset().0;
-    let arr = numpy::ndarray::Array2::from_shape_vec(shape, flat)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(arr.into_pyarray(py))
+    into_py_array2(result, py)
 }
 
 /// Compute the Black implied volatility using the SABR model (Hagan et al. 2002).
@@ -665,6 +667,6 @@ fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hull_white, m)?)?;
     m.add_function(wrap_pyfunction!(sabr_implied_vol, m)?)?;
     m.add_function(wrap_pyfunction!(lsmc_american_option, m)?)?;
-    m.add("__version__", "0.3.1")?;
+    m.add("__version__", "0.3.2")?;
     Ok(())
 }

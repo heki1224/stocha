@@ -1,5 +1,4 @@
-#[allow(unused_imports)]
-use rand_pcg::rand_core::{Rng, SeedableRng};
+use rand_pcg::rand_core::Rng;
 use rand_pcg::Lcg128CmDxsm64;
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +18,6 @@ pub struct Pcg64DxsmState {
     pub seed: u128,
 }
 
-#[allow(dead_code)]
 impl Pcg64Dxsm {
     /// Create a new RNG from a 128-bit seed.
     pub fn new(seed: u128) -> Self {
@@ -33,6 +31,7 @@ impl Pcg64Dxsm {
     }
 
     /// Generate one u64 random value.
+    #[allow(dead_code)]
     pub fn next_u64(&mut self) -> u64 {
         self.rng.next_u64()
     }
@@ -50,6 +49,7 @@ impl Pcg64Dxsm {
     }
 
     /// Clone the internal RNG for stream forking.
+    #[allow(dead_code)]
     pub fn fork(&self) -> Self {
         Self {
             rng: self.rng.clone(),
@@ -62,15 +62,23 @@ impl Pcg64Dxsm {
         self.seed
     }
 
-    /// Serialize the current state to a JSON string (checkpoint support).
+    /// Serialize the seed to a JSON string for reproducibility.
     ///
-    /// Phase 1: records seed only. Full internal-state serialization planned for Phase 2.
+    /// **Limitation**: records the *original seed only*, not the full internal state.
+    /// If the RNG has been advanced (e.g. via `advance()` or by generating samples),
+    /// restoring from this snapshot will replay the sequence **from the beginning**,
+    /// not from the current position. Use this for audit trails and exact reproducibility
+    /// from a fixed starting point, not for mid-stream checkpointing.
     pub fn save_state(&self) -> String {
         let state = Pcg64DxsmState { seed: self.seed };
         serde_json::to_string(&state).unwrap_or_default()
     }
 
-    /// Restore state from a JSON string produced by `save_state`.
+    /// Restore an RNG from a JSON string produced by `save_state`.
+    ///
+    /// Constructs a fresh RNG from the recorded seed. The restored RNG is equivalent
+    /// to calling `Pcg64Dxsm::new(seed)` — it starts from the beginning of the
+    /// sequence, regardless of how far the original RNG had advanced.
     pub fn from_state(json: &str) -> Result<Self, String> {
         let state: Pcg64DxsmState =
             serde_json::from_str(json).map_err(|e| e.to_string())?;

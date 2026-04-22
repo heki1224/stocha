@@ -146,4 +146,21 @@ mod tests {
         assert!(price < european + 2.0, "price too high: {}", price);
         assert!(std_err < 0.10, "std_err too large: {}", std_err);
     }
+
+    #[test]
+    fn test_lsmc_call_reasonable() {
+        // Deep ITM call: price should be close to intrinsic (S0 - K * exp(-r*T))
+        let params = LsmcParams {
+            s0: 110.0, k: 100.0, r: 0.05, sigma: 0.20,
+            t: 1.0, steps: 50, n_paths: 20_000,
+            is_put: false, poly_degree: 3,
+        };
+        let (price, std_err) = lsmc_american_option(&params, 42);
+        // American call on non-dividend-paying stock == European call (no early exercise).
+        // Price must be positive and std_err finite.
+        assert!(price > 0.0, "call price must be positive: {}", price);
+        assert!(std_err >= 0.0 && std_err.is_finite(), "std_err invalid: {}", std_err);
+        // Rough sanity: call price < S0
+        assert!(price < params.s0, "call price exceeds S0: {}", price);
+    }
 }

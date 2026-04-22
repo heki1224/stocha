@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-04-22
+
+### Added
+
+- **`RNG.from_state(json)`**: class method to restore an RNG from a JSON string
+  produced by `save_state`; equivalent to `RNG(seed=original_seed)`
+- **`RNG` seed accepts 128-bit integers**: `seed` parameter upgraded from `u64` to
+  `u128`; full 128-bit seed space accessible from Python
+- **Tests**: LSMC call option, Merton `lambda=0` → GBM equivalence, Heston Feller
+  condition violation stability, Hull-White negative initial rate, VaR with all-positive
+  returns
+
+### Fixed
+
+- **`RNG.save_state`**: docstring now clearly states that only the seed is recorded
+  (not the full internal state); restoring replays from the beginning, not from the
+  current position
+- **CVaR definition**: inline comment and docstring clarified that CVaR is computed
+  as `E[Loss | Loss >= VaR]` (inclusive boundary); applicable only to discrete samples
+- **Code quality**: `into_py_array2` helper eliminates 7 duplicate `Array2` conversion
+  patterns in `src/lib.rs`; `#[allow(dead_code)]` narrowed from impl-block scope to
+  individual unused methods; `norm_ppf` doc/allow attribute order corrected
+
 ## [0.3.1] - 2026-04-22
 
 ### Fixed
@@ -83,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `standard_normal(10M samples)` | ~155M samples/sec |
 | `gbm(n_paths=100k, steps=252)` | ~680k paths/sec |
 
-[Unreleased]: https://github.com/heki1224/stocha/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/heki1224/stocha/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/heki1224/stocha/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/heki1224/stocha/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/heki1224/stocha/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/heki1224/stocha/compare/v0.1.0...v0.2.0

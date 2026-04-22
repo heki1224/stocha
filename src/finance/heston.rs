@@ -153,4 +153,20 @@ mod tests {
         let rel_err = (mean_terminal - expected).abs() / expected;
         assert!(rel_err < 0.02, "rel_err={:.4}", rel_err);
     }
+
+    #[test]
+    fn test_feller_condition_violated_stability() {
+        // 2*kappa*theta < xi^2 → variance process hits zero; Full Truncation should
+        // keep the simulation numerically stable (no panic, all prices positive).
+        let params = HestonParams {
+            kappa: 1.0,
+            theta: 0.04,  // 2*kappa*theta = 0.08 < xi^2 = 0.09 → Feller violated
+            xi: 0.3,
+            n_paths: 5_000,
+            ..default_params()
+        };
+        let paths = heston_paths(&params, 77);
+        assert_eq!(paths.shape(), &[5_000, 253]);
+        assert!(paths.iter().all(|&v| v > 0.0), "negative price under Feller violation");
+    }
 }
