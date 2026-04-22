@@ -85,9 +85,11 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 
 | 関数 / クラス | 説明 |
 |---|---|
-| `RNG(seed)` | PCG64DXSM 擬似乱数生成器 |
+| `RNG(seed)` | PCG64DXSM 擬似乱数生成器（`seed` は 128 ビット整数まで対応） |
 | `RNG.normal(size, loc, scale)` | N(loc, scale²) からサンプリング |
 | `RNG.uniform(size)` | Uniform[0, 1) からサンプリング |
+| `RNG.save_state()` | シードを JSON 文字列にシリアライズ（ストリーム位置ではなくシード値のみ記録） |
+| `RNG.from_state(json)` | `save_state` が返した JSON から RNG を復元（`RNG(seed=original_seed)` と等価） |
 | `sobol(dim, n_samples)` | Sobol 低差異列（Joe & Kuo 2008） |
 | `halton(dim, n_samples, skip)` | Halton 低差異列 |
 

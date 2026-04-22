@@ -83,9 +83,11 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 
 | Function / Class | Description |
 |---|---|
-| `RNG(seed)` | PCG64DXSM pseudo-random number generator |
+| `RNG(seed)` | PCG64DXSM PRNG; `seed` accepts integers up to 128-bit |
 | `RNG.normal(size, loc, scale)` | Sample from N(loc, scale²) |
 | `RNG.uniform(size)` | Sample from Uniform[0, 1) |
+| `RNG.save_state()` | Serialize seed to JSON string (records seed only, not stream position) |
+| `RNG.from_state(json)` | Restore RNG from JSON produced by `save_state`; equivalent to `RNG(seed=original_seed)` |
 | `sobol(dim, n_samples)` | Sobol low-discrepancy sequence (Joe & Kuo 2008) |
 | `halton(dim, n_samples, skip)` | Halton low-discrepancy sequence |
 
