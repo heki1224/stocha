@@ -42,8 +42,8 @@ pub fn sabr_implied_vol(
         ));
     }
 
-    // At-the-money approximation when F ≈ K.
-    if (fs - ks).abs() < 1e-10 * fs.abs().max(1e-10) {
+    // At-the-money approximation when F ≈ K (log-relative tolerance, scale-invariant).
+    if (fs / ks).ln().abs() < 1e-8 {
         return Ok(sabr_atm(fs, t, alpha, beta, rho, nu));
     }
 
@@ -69,13 +69,12 @@ pub fn sabr_implied_vol(
 
     // Correction terms.
     let log_fk_sq = log_fk * log_fk;
-    let omβ2 = one_minus_beta * one_minus_beta;
-    let gamma1 = 2.0 * beta - 1.0;
+    let om_beta2 = one_minus_beta * one_minus_beta;
     let correction_num = 1.0
-        + (omβ2 / 24.0) * log_fk_sq
-        + (omβ2 * omβ2 / 1920.0) * log_fk_sq * log_fk_sq;
+        + (om_beta2 / 24.0) * log_fk_sq
+        + (om_beta2 * om_beta2 / 1920.0) * log_fk_sq * log_fk_sq;
 
-    let a_term = (omβ2 / 24.0) * alpha * alpha / (fk_beta * fk_beta);
+    let a_term = (om_beta2 / 24.0) * alpha * alpha / (fk_beta * fk_beta);
     let b_term = 0.25 * rho * beta * nu * alpha / fk_beta;
     let c_term = (2.0 - 3.0 * rho * rho) / 24.0 * nu * nu;
     let time_correction = 1.0 + (a_term + b_term + c_term) * t;
@@ -89,9 +88,6 @@ pub fn sabr_implied_vol(
             sigma_b
         ));
     }
-
-    // Suppress unused variable warning.
-    let _ = gamma1;
 
     Ok(sigma_b)
 }

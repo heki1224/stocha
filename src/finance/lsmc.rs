@@ -106,9 +106,13 @@ pub fn lsmc_american_option(params: &LsmcParams, seed: u128) -> (f64, f64) {
     }
 
     let mean = cashflow.iter().sum::<f64>() / n as f64;
-    let var = cashflow.iter().map(|&c| (c - mean).powi(2)).sum::<f64>()
-        / (n - 1) as f64;
-    let std_err = (var / n as f64).sqrt();
+    let std_err = if n <= 1 {
+        0.0
+    } else {
+        let var = cashflow.iter().map(|&c| (c - mean).powi(2)).sum::<f64>()
+            / (n - 1) as f64;
+        (var / n as f64).sqrt()
+    };
 
     (mean, std_err)
 }

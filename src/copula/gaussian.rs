@@ -21,6 +21,23 @@ pub fn gaussian_copula_samples(
     if corr.ncols() != dim {
         return Err("correlation matrix must be square".into());
     }
+    // Validate diagonal = 1 and symmetry.
+    for i in 0..dim {
+        if (corr[[i, i]] - 1.0).abs() > 1e-10 {
+            return Err(format!(
+                "correlation matrix diagonal element [{}][{}] must be 1.0, got {}",
+                i, i, corr[[i, i]]
+            ));
+        }
+        for j in (i + 1)..dim {
+            if (corr[[i, j]] - corr[[j, i]]).abs() > 1e-10 {
+                return Err(format!(
+                    "correlation matrix is not symmetric: [{},{}]={} vs [{},{}]={}",
+                    i, j, corr[[i, j]], j, i, corr[[j, i]]
+                ));
+            }
+        }
+    }
 
     // Cholesky decomposition (lower triangular L such that L L^T = Σ).
     let l = cholesky(corr)?;

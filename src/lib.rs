@@ -634,6 +634,11 @@ fn lsmc_american_option<'py>(
             "steps and n_paths must be positive",
         ));
     }
+    if n_paths < 2 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_paths must be at least 2",
+        ));
+    }
     if poly_degree == 0 || poly_degree > 4 {
         return Err(pyo3::exceptions::PyValueError::new_err(
             "poly_degree must be in [1, 4]",
@@ -660,6 +665,6 @@ fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hull_white, m)?)?;
     m.add_function(wrap_pyfunction!(sabr_implied_vol, m)?)?;
     m.add_function(wrap_pyfunction!(lsmc_american_option, m)?)?;
-    m.add("__version__", "0.3.0")?;
+    m.add("__version__", "0.3.1")?;
     Ok(())
 }

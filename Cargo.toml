@@ -1,9 +1,9 @@
 [package]
 name = "stocha"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "High-performance random number and financial simulation library for Python"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/stocha-rs/stocha"
 keywords = ["random", "simulation", "finance", "quant", "monte-carlo"]
 categories = ["science", "mathematics", "simulation"]

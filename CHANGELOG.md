@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-04-22
+
+### Fixed
+
+- **LSMC**: panic on `n_paths=1` due to division by `(n-1)=0` in std_err calculation;
+  now returns `std_err=0.0` for `n=1`, and Python binding rejects `n_paths < 2` with `ValueError`
+- **Hull-White**: RNG stream initialization switched from `seed.wrapping_add(i)` to
+  `advance(i * block_size)` (consistent with GBM/Heston/Merton); improves statistical
+  independence between paths
+- **Gaussian copula**: added validation that correlation matrix diagonal elements equal 1.0
+  and that the matrix is symmetric (tolerance 1e-10); previously silent wrong results
+- **SABR**: removed dead variable `gamma1`; ATM detection changed from absolute-difference
+  to `|log(F/K)| < 1e-8` (scale-invariant, more stable for small strikes)
+- **Cargo.toml**: corrected license field from `MIT OR Apache-2.0` to `MIT`
+
 ## [0.3.0] - 2026-04-22
 
 ### Added
@@ -68,7 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `standard_normal(10M samples)` | ~155M samples/sec |
 | `gbm(n_paths=100k, steps=252)` | ~680k paths/sec |
 
-[Unreleased]: https://github.com/heki1224/stocha/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/heki1224/stocha/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/heki1224/stocha/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/heki1224/stocha/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/heki1224/stocha/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/heki1224/stocha/releases/tag/v0.1.0

@@ -3,10 +3,11 @@ use crate::prng::Pcg64Dxsm;
 use ndarray::Array2;
 use rayon::prelude::*;
 
+#[derive(Debug, Clone)]
 pub struct HullWhiteParams {
     pub r0: f64,
     pub a: f64,     // Mean-reversion speed.
-    pub theta: f64, // Long-run mean rate (constant; theta/a in Vasicek notation).
+    pub theta: f64, // Drift constant = a × long_run_mean_rate (i.e. dr = (theta - a*r)*dt).
     pub sigma: f64, // Volatility of the short rate.
     pub t: f64,
     pub steps: usize,
@@ -32,12 +33,16 @@ pub fn hull_white_paths(params: &HullWhiteParams, seed: u128) -> Array2<f64> {
     let steps = params.steps;
     let mut flat = vec![0.0f64; n * (steps + 1)];
 
+    // Block splitting: each path advances from the same seed by i * block_size steps.
+    // 1 normal per step; Marsaglia polar uses ~2 u64 draws on average + buffer.
+    let block_size: u128 = (steps as u128 + 1024) * 4;
+
     // Parallelise over paths; each path gets an independent RNG stream.
     flat.par_chunks_mut(steps + 1)
         .enumerate()
         .for_each(|(i, row)| {
-            let path_seed = seed.wrapping_add(i as u128);
-            let mut rng = Pcg64Dxsm::new(path_seed);
+            let mut rng = Pcg64Dxsm::new(seed);
+            rng.advance(i as u128 * block_size);
 
             row[0] = params.r0;
             for s in 0..steps {
