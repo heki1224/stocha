@@ -124,7 +124,7 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 | `RNG.uniform(size)` | Sample from Uniform[0, 1) |
 | `RNG.save_state()` | Serialize seed to JSON string (records seed only, not stream position) |
 | `RNG.from_state(json)` | Restore RNG from JSON produced by `save_state`; equivalent to `RNG(seed=original_seed)` |
-| `sobol(dim, n_samples)` | Sobol low-discrepancy sequence (Joe & Kuo 2008) |
+| `sobol(dim, n_samples)` | Sobol low-discrepancy sequence (Joe & Kuo 2008). For high-dim or large-N use cases, `scipy.stats.qmc.Sobol` is significantly faster. |
 | `halton(dim, n_samples, skip)` | Halton low-discrepancy sequence |
 
 ### Stochastic Price Models

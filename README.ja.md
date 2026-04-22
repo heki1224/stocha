@@ -124,7 +124,7 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | `RNG.uniform(size)` | Uniform[0, 1) からサンプリング |
 | `RNG.save_state()` | シードを JSON 文字列にシリアライズ（ストリーム位置ではなくシード値のみ記録） |
 | `RNG.from_state(json)` | `save_state` が返した JSON から RNG を復元（`RNG(seed=original_seed)` と等価） |
-| `sobol(dim, n_samples)` | Sobol 低差異列（Joe & Kuo 2008） |
+| `sobol(dim, n_samples)` | Sobol 低差異列（Joe & Kuo 2008）。高次元・大量サンプル用途では `scipy.stats.qmc.Sobol` の方が大幅に高速。 |
 | `halton(dim, n_samples, skip)` | Halton 低差異列 |
 
 ### 確率過程モデル
