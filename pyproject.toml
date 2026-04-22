@@ -18,9 +18,16 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
+[project.urls]
+Homepage = "https://github.com/heki1224/stocha"
+Repository = "https://github.com/heki1224/stocha"
+Changelog = "https://github.com/heki1224/stocha/blob/main/CHANGELOG.md"
+
 dependencies = [
     "numpy>=1.24",
 ]
@@ -34,5 +41,6 @@ dev = [
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+strip = true
 python-source = "python"
 module-name = "stocha._stocha"
