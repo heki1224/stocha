@@ -1,0 +1,31 @@
+[package]
+name = "stocha"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance random number and financial simulation library for Python"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/stocha-rs/stocha"
+keywords = ["random", "simulation", "finance", "quant", "monte-carlo"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "stocha"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.28", features = ["extension-module"] }
+numpy = "0.28"
+ndarray = { version = "0.17", features = ["rayon"] }
+rand = "0.10"
+rand_pcg = "0.10"
+rayon = "1.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+approx = "0.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

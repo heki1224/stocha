@@ -1,0 +1,36 @@
+# Rust build artifacts
+/target/
+
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Compiled extension modules
+*.so
+*.pyd
+
+# Distribution / packaging
+/dist/
+wheels/
+*.egg-info/
+*.egg
+
+# maturin / pip install artifacts
+sdist/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# stocha dev artifacts
+.artifacts/
+tasks/
