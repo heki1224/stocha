@@ -128,6 +128,20 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 | Normal sampling | ~155M samples/sec |
 | GBM (252 steps) | ~680k paths/sec |
 
+## Tutorials
+
+| File | Contents |
+|---|---|
+| `examples/01_basic_rng.py` | RNG basics, reproducibility, performance benchmark |
+| `examples/02_stock_gbm.py` | GBM path simulation, European option pricing, antithetic variates |
+| `examples/03_quasi_random.py` | Sobol/Halton sequences, QMC vs MC convergence comparison |
+| `examples/04_stochastic_vol.py` | Heston stochastic volatility, Merton jump-diffusion |
+| `examples/05_risk_copula.py` | VaR/CVaR, Gaussian/Student-t copula tail dependence |
+| `examples/06_interest_rate.py` | Hull-White short-rate model, SABR volatility smile |
+| `examples/07_american_option.py` | LSMC American option pricing, early exercise premium |
+
+Each example has a Japanese counterpart (`*.ja.py`).
+
 ## Roadmap
 
 | Version | Features |

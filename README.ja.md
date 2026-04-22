@@ -21,11 +21,22 @@
 
 ## インストール
 
+**PyPI（近日公開予定）:**
+
 ```bash
 pip install stocha
 ```
 
-Rust コンパイラは不要です。`pip install` のみで使えます。
+**ソースからビルド（現在はこちら）:**
+
+```bash
+git clone https://github.com/heki1224/stocha.git
+cd stocha
+pip install maturin
+maturin develop --release
+```
+
+PyPI 公開後は `pip install stocha` のみで利用できるようになります。Rust コンパイラは不要です。
 
 ## クイックスタート
 
@@ -125,6 +136,11 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 |---|---|
 | `examples/01_basic_rng.ja.py` | RNG 基本操作・再現性・パフォーマンス計測 |
 | `examples/02_stock_gbm.ja.py` | GBM による株価シミュレーション・オプション価格計算 |
+| `examples/03_quasi_random.ja.py` | Sobol/Halton 列・QMC vs MC 収束比較 |
+| `examples/04_stochastic_vol.ja.py` | Heston 確率ボラティリティ・Merton ジャンプ拡散 |
+| `examples/05_risk_copula.ja.py` | VaR/CVaR・ガウス/Student-t コピュラのテール依存比較 |
+| `examples/06_interest_rate.ja.py` | Hull-White 金利モデル・SABR ボラティリティスマイル |
+| `examples/07_american_option.ja.py` | LSMC アメリカンオプション・早期行使プレミアム |
 
 ## 対象ユーザー
 
