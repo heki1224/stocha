@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-04-24
+
+### Security
+
+- **F-1 (HIGH) GIL-released ArrayView data race**: `gaussian_copula` and `student_t_copula`
+  previously passed a raw `ArrayView2` borrow of the Python-managed `corr` array into
+  `py.detach()`. A concurrent Python thread could have mutated the array while the GIL was
+  released, causing undefined behavior. Fixed by calling `.to_owned()` before entering
+  `py.detach`, so Rust holds an independent copy during parallel execution.
+- **F-2 (HIGH) NaN/Inf input causes process abort in `var_cvar`**: `sort_unstable_by` with
+  `.partial_cmp().unwrap()` panicked on NaN inputs, crashing the entire Python process via
+  PyO3. Fixed by adding an `is_finite()` pre-check that returns `ValueError` for any NaN or
+  infinite value, and switching the sort comparator to `total_cmp` as a secondary safeguard.
+
 ## [0.3.2] - 2026-04-22
 
 ### Added

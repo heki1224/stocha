@@ -425,7 +425,8 @@ fn var_cvar<'py>(
         ));
     }
     let slice: Vec<f64> = arr.iter().copied().collect();
-    Ok(compute_var_cvar(&slice, confidence))
+    compute_var_cvar(&slice, confidence)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
 }
 
 /// Sample from a Gaussian copula with a given correlation matrix.
@@ -450,9 +451,9 @@ fn gaussian_copula<'py>(
     n_samples: usize,
     seed: u64,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
-    let arr = corr.as_array();
+    let owned = corr.as_array().to_owned();
     let result = py
-        .detach(|| gaussian_copula_samples(arr, n_samples, seed as u128))
+        .detach(|| gaussian_copula_samples(owned.view(), n_samples, seed as u128))
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
     into_py_array2(result, py)
 }
@@ -479,9 +480,9 @@ fn student_t_copula<'py>(
     if nu <= 2.0 {
         return Err(pyo3::exceptions::PyValueError::new_err("nu must be > 2"));
     }
-    let arr = corr.as_array();
+    let owned = corr.as_array().to_owned();
     let result = py
-        .detach(|| student_t_copula_samples(arr, nu, n_samples, seed as u128))
+        .detach(|| student_t_copula_samples(owned.view(), nu, n_samples, seed as u128))
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
     into_py_array2(result, py)
 }

@@ -48,6 +48,16 @@ class TestVarCvar:
         with pytest.raises(Exception):
             stocha.var_cvar(returns, 0.0)
 
+    def test_nan_input_raises(self):
+        returns = np.array([0.01, float("nan"), -0.02])
+        with pytest.raises(ValueError, match="NaN or Inf"):
+            stocha.var_cvar(returns, 0.95)
+
+    def test_inf_input_raises(self):
+        returns = np.array([0.01, float("inf"), -0.02])
+        with pytest.raises(ValueError, match="NaN or Inf"):
+            stocha.var_cvar(returns, 0.95)
+
 
 # ---------------------------------------------------------------------------
 # Gaussian Copula
