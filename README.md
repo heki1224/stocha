@@ -148,10 +148,11 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 
 ## Performance (Apple M-series, release build)
 
-| Operation | Throughput |
-|---|---|
-| Normal sampling | ~155M samples/sec |
-| GBM (252 steps) | ~680k paths/sec |
+| Operation | Throughput | vs NumPy |
+|---|---|---|
+| Normal sampling (Ziggurat) | ~300M samples/sec | 1.0× |
+| GBM (252 steps, 100k paths) | ~360M steps/sec | 3.0× |
+| Halton (dim=4) | ~106M samples/sec | 2.9× |
 
 ## Tutorials
 
@@ -180,7 +181,8 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v0.1** | PCG64DXSM, normal distribution, GBM, antithetic variates |
 | **v0.2** | Sobol (Joe & Kuo 2008), Halton, Heston model, Merton Jump-Diffusion |
 | **v0.3** | VaR/CVaR, Gaussian/Student-t copula, Hull-White, SABR, LSMC |
-| **v1.0** | Ziggurat sampler, DLPack zero-copy, calibration utilities |
+| **v1.0** ✅ | Ziggurat sampler (~3× faster normal sampling) |
+| **v1.1** | DLPack zero-copy, SABR/Heston calibration utilities |
 
 ## License
 

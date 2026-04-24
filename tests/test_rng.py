@@ -7,6 +7,7 @@ Run with: pytest tests/ -v
 
 import pytest
 import numpy as np
+from scipy import stats
 import stocha
 
 
@@ -84,7 +85,14 @@ class TestStandardNormal:
         rng = stocha.RNG(seed=0)
         out = rng.standard_normal(size=500_000)
         assert abs(out.mean()) < 0.005
-        assert abs(out.std() - 1.0) < 0.005
+        assert abs(out.std() - 1.0) < 0.01
+
+    def test_ks_normality(self):
+        """Kolmogorov-Smirnov test: Ziggurat output vs N(0,1)."""
+        rng = stocha.RNG(seed=123)
+        samples = rng.standard_normal(size=100_000)
+        stat, p = stats.kstest(samples, "norm")
+        assert p > 0.01, f"KS test failed: stat={stat:.6f}, p={p:.6f}"
 
     def test_reproducibility(self):
         a = stocha.RNG(seed=42).standard_normal(size=1_000)

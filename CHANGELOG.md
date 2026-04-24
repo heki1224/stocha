@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-24
+
+### Changed
+
+- **Ziggurat sampler**: Normal distribution sampling switched from Marsaglia polar
+  method to Ziggurat algorithm (N=256 rectangles). ~3× faster than previous
+  implementation; now matches NumPy throughput (~300M samples/sec on Apple M-series).
+- **GBM throughput**: Geometric Brownian Motion path generation improved from ~1.6×
+  to ~3.0× faster than NumPy (benefiting from the Ziggurat normal sampler).
+
+### Added
+
+- `scripts/gen_ziggurat_table.py`: Ziggurat table generator using mpmath
+  (50-digit precision) for reproducible constant generation.
+
 ## [0.3.3] - 2026-04-24
 
 ### Security
@@ -120,7 +135,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `standard_normal(10M samples)` | ~155M samples/sec |
 | `gbm(n_paths=100k, steps=252)` | ~680k paths/sec |
 
-[Unreleased]: https://github.com/heki1224/stocha/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/heki1224/stocha/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/heki1224/stocha/compare/v0.3.3...v1.0.0
 [0.3.3]: https://github.com/heki1224/stocha/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/heki1224/stocha/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/heki1224/stocha/compare/v0.3.0...v0.3.1

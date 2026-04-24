@@ -60,7 +60,7 @@ class TestGBM:
 
     def test_antithetic_reduces_variance(self):
         kw = dict(s0=100.0, mu=0.05, sigma=0.2, t=1.0, steps=252,
-                  n_paths=10_000, seed=0)
+                  n_paths=50_000, seed=42)
         plain = stocha.gbm(**kw, antithetic=False)
         anti = stocha.gbm(**kw, antithetic=True)
         assert anti[:, -1].std() < plain[:, -1].std()

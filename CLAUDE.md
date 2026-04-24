@@ -27,7 +27,8 @@ src/               # Rust source (PyO3 extension)
   finance/         # GBM, Heston, jump_diffusion (Merton), Hull-White, SABR, LSMC
   risk/            # VaR / CVaR
   copula/          # Gaussian / Student-t copulas
-  dist/            # Probability distributions (norm_ppf, etc.)
+  dist/            # Probability distributions (Ziggurat normal, norm_ppf, etc.)
+scripts/           # Code generation (gen_ziggurat_table.py)
 python/stocha/
   __init__.py      # Public Python API (wraps Rust via _stocha)
 tests/

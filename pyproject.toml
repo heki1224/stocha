@@ -4,14 +4,14 @@ build-backend = "maturin"
 
 [project]
 name = "stocha"
-version = "0.3.3"
+version = "1.0.0"
 description = "High-performance random number and financial simulation library"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 keywords = ["random", "simulation", "finance", "quant", "monte-carlo", "stochastic"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Financial and Insurance Industry",
     "License :: OSI Approved :: MIT License",

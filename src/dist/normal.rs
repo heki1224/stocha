@@ -1,50 +1,74 @@
+use crate::dist::ziggurat_tables::{ZIGGURAT_R, ZIGGURAT_X, ZIGGURAT_Y};
 use crate::prng::Pcg64Dxsm;
 
-/// Normal distribution sampler using the Marsaglia polar method.
+/// Normal distribution sampler using the Ziggurat method (N=256).
 ///
-/// A rejection-based improvement of Box-Muller that avoids trigonometric
-/// functions and produces exact normal samples.
+/// Marsaglia & Tsang (2000) with Doornik's fix: wedge rejection uses
+/// an independent random number to avoid collision-test failures.
 ///
-/// Note: Ziggurat method is planned for Phase 2 to further improve throughput.
+/// Bit layout of a single u64:
+///   - bits [0..8)   : layer index (0..255)
+///   - bit  8        : sign (0 = positive, 1 = negative)
+///   - bits [11..64) : uniform x coordinate (53-bit mantissa)
 pub struct NormalSampler;
 
 impl NormalSampler {
     /// Draw one sample from the standard normal distribution N(0, 1).
+    #[inline]
     pub fn sample(rng: &mut Pcg64Dxsm) -> f64 {
         loop {
-            let u = rng.next_f64() * 2.0 - 1.0;
-            let v = rng.next_f64() * 2.0 - 1.0;
-            let s = u * u + v * v;
-            if s >= 1.0 || s == 0.0 {
+            let u = rng.next_u64();
+            let layer = (u & 0xFF) as usize;
+            let sign = ((u >> 8) & 1) as f64 * -2.0 + 1.0; // 1.0 or -1.0
+            let u_frac = (u >> 11) as f64 * (1.0 / (1u64 << 53) as f64);
+            let x = u_frac * ZIGGURAT_X[layer];
+
+            // Fast path: x falls strictly inside the rectangle below
+            if x < ZIGGURAT_X[layer + 1] {
+                return sign * x;
+            }
+
+            // Tail: layer 0 requires special sampling
+            if layer == 0 {
+                let tail = Self::sample_tail(rng);
+                return sign * tail;
+            }
+
+            // Wedge rejection: use a fresh random number (Doornik fix)
+            let y = ZIGGURAT_Y[layer] + rng.next_f64() * (ZIGGURAT_Y[layer + 1] - ZIGGURAT_Y[layer]);
+            if y < (-0.5 * x * x).exp() {
+                return sign * x;
+            }
+        }
+    }
+
+    /// Tail sampler for |x| > r using the method of Marsaglia (1964).
+    ///
+    /// Generates x ~ f(x) for x > r by rejection sampling:
+    ///   x = -ln(U1) / r
+    ///   accept if -2 ln(U2) >= x^2
+    /// Then return x + r.
+    #[cold]
+    #[inline(never)]
+    fn sample_tail(rng: &mut Pcg64Dxsm) -> f64 {
+        loop {
+            let u1 = rng.next_f64();
+            let u2 = rng.next_f64();
+            // Guard against ln(0)
+            if u1 <= 0.0 || u2 <= 0.0 {
                 continue;
             }
-            let factor = (-2.0 * s.ln() / s).sqrt();
-            return u * factor;
+            let x = -u1.ln() / ZIGGURAT_R;
+            if -2.0 * u2.ln() >= x * x {
+                return x + ZIGGURAT_R;
+            }
         }
     }
 
     /// Fill a mutable slice with standard normal samples.
-    ///
-    /// Generates two samples per iteration using the polar method for efficiency.
     pub fn sample_into(rng: &mut Pcg64Dxsm, buf: &mut [f64]) {
-        let mut i = 0;
-        while i < buf.len() {
-            loop {
-                let u = rng.next_f64() * 2.0 - 1.0;
-                let v = rng.next_f64() * 2.0 - 1.0;
-                let s = u * u + v * v;
-                if s >= 1.0 || s == 0.0 {
-                    continue;
-                }
-                let factor = (-2.0 * s.ln() / s).sqrt();
-                buf[i] = u * factor;
-                i += 1;
-                if i < buf.len() {
-                    buf[i] = v * factor;
-                    i += 1;
-                }
-                break;
-            }
+        for slot in buf.iter_mut() {
+            *slot = Self::sample(rng);
         }
     }
 
