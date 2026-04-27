@@ -130,6 +130,32 @@ for k in strikes_neg:
                                   shift=shift)
     print(f"{k:>12.2%}  {iv:>30.4%}")
 
+# --- 4b. SABR キャリブレーション ---
+print("\n" + "=" * 60)
+print("4b. SABR キャリブレーション — スマイルから (alpha, rho, nu) を復元")
+print("=" * 60)
+
+# 合成市場: 既知パラメータからスマイルを生成し、calibrate で復元する。
+# 実務では strikes/vols はブローカーのクオートから取得する。
+true_alpha, true_rho, true_nu = 0.20, -0.30, 0.40
+ks = np.array([0.04, 0.045, 0.05, 0.055, 0.06])
+market_vols = np.array([
+    stocha.sabr_implied_vol(f=F, k=k, t=T_sab,
+                             alpha=true_alpha, beta=beta,
+                             rho=true_rho, nu=true_nu)
+    for k in ks
+])
+
+result = stocha.sabr_calibrate(ks, market_vols, f=F, t=T_sab, beta=beta)
+
+print(f"\n{'パラメータ':>10}  {'真値':>10}  {'キャリブ値':>12}  {'誤差':>10}")
+print("-" * 50)
+print(f"{'alpha':>10}  {true_alpha:>10.4f}  {result['alpha']:>12.4f}  {abs(result['alpha']-true_alpha):>10.2e}")
+print(f"{'rho':>10}  {true_rho:>10.4f}  {result['rho']:>12.4f}  {abs(result['rho']-true_rho):>10.2e}")
+print(f"{'nu':>10}  {true_nu:>10.4f}  {result['nu']:>12.4f}  {abs(result['nu']-true_nu):>10.2e}")
+print(f"\nRMSE: {result['rmse']:.2e}")
+print(f"反復回数: {result['iterations']}, 収束={result['converged']}")
+
 # --- 5. スループットベンチマーク ---
 print("\n" + "=" * 60)
 print("5. スループットベンチマーク")

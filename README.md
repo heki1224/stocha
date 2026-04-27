@@ -104,6 +104,12 @@ iv = stocha.sabr_implied_vol(
 )
 print(f"SABR ATM implied vol: {iv:.4f}")
 
+# ── SABR calibration: recover (alpha, rho, nu) from a market smile ───────
+strikes = np.array([0.04, 0.045, 0.05, 0.055, 0.06])
+market_vols = np.array([0.244, 0.218, 0.201, 0.190, 0.184])
+fit = stocha.sabr_calibrate(strikes, market_vols, f=0.05, t=1.0, beta=0.5)
+print(f"calibrated: alpha={fit['alpha']:.4f}, rho={fit['rho']:.4f}, nu={fit['nu']:.4f}")
+
 # ── American option via LSMC ──────────────────────────────────────────────
 price, std_err = stocha.lsmc_american_option(
     s0=100.0, k=100.0, r=0.05, sigma=0.20,
@@ -144,6 +150,7 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 | `gaussian_copula(corr, n_samples)` | Gaussian copula samples |
 | `student_t_copula(corr, nu, n_samples)` | Student-t copula samples |
 | `sabr_implied_vol(f, k, t, alpha, beta, rho, nu, shift)` | SABR Black implied volatility |
+| `sabr_calibrate(strikes, market_vols, f, t, beta, shift, ...)` | Calibrate SABR `(α, ρ, ν)` to an observed IV smile (Projected Levenberg-Marquardt + 1-D ATM Brent root-find on α) |
 | `lsmc_american_option(s0, k, r, sigma, t, steps, n_paths, ...)` | American option price via Longstaff-Schwartz LSMC |
 
 ## Performance (Apple M-series, release build)
@@ -182,7 +189,8 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v0.2** | Sobol (Joe & Kuo 2008), Halton, Heston model, Merton Jump-Diffusion |
 | **v0.3** | VaR/CVaR, Gaussian/Student-t copula, Hull-White, SABR, LSMC |
 | **v1.0** ✅ | Ziggurat sampler (~3× faster normal sampling) |
-| **v1.1** | DLPack zero-copy, SABR/Heston calibration utilities |
+| **v1.1** ✅ | SABR calibration (`sabr_calibrate`) |
+| **v1.2** | DLPack zero-copy, Heston calibration utilities |
 
 ## License
 

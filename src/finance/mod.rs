@@ -4,3 +4,4 @@ pub mod hull_white;
 pub mod jump_diffusion;
 pub mod lsmc;
 pub mod sabr;
+pub mod sabr_calibration;

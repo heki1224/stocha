@@ -28,6 +28,7 @@ from stocha._stocha import gaussian_copula as _gaussian_copula
 from stocha._stocha import student_t_copula as _student_t_copula
 from stocha._stocha import hull_white as _hull_white
 from stocha._stocha import sabr_implied_vol as _sabr_implied_vol
+from stocha._stocha import sabr_calibrate as _sabr_calibrate
 from stocha._stocha import lsmc_american_option as _lsmc_american_option
 from stocha._stocha import __version__
 
@@ -43,6 +44,7 @@ __all__ = [
     "student_t_copula",
     "hull_white",
     "sabr_implied_vol",
+    "sabr_calibrate",
     "lsmc_american_option",
     "__version__",
 ]
@@ -496,6 +498,50 @@ def sabr_implied_vol(
     """
     return _sabr_implied_vol(f=f, k=k, t=t, alpha=alpha, beta=beta,
                              rho=rho, nu=nu, shift=shift)
+
+
+def sabr_calibrate(
+    strikes: np.ndarray,
+    market_vols: np.ndarray,
+    f: float,
+    t: float,
+    beta: float = 0.5,
+    shift: float = 0.0,
+    max_iter: int = 100,
+    tol: float = 1e-10,
+) -> dict:
+    """Calibrate SABR parameters (alpha, rho, nu) to an observed IV smile.
+
+    Beta is held fixed (industry standard). The ATM alpha is recovered exactly
+    by 1-D Brent root-finding on the Hagan ATM formula; (rho, nu) are then
+    fit by a Projected Levenberg-Marquardt loop.
+
+    Args:
+        strikes:     1-D array of strikes K_i.
+        market_vols: 1-D array of observed Black implied vols.
+        f:           Forward price or rate.
+        t:           Time to expiry in years (must be > 0).
+        beta:        CEV exponent in [0, 1] (default ``0.5``).
+        shift:       Shift for negative-rate support (default ``0.0``).
+        max_iter:    Maximum LM iterations (default ``100``).
+        tol:         Convergence tolerance (default ``1e-10``).
+
+    Returns:
+        Dict with keys ``alpha``, ``rho``, ``nu``, ``rmse``, ``iterations``,
+        ``converged``.
+
+    Example:
+        >>> import numpy as np
+        >>> strikes = np.array([0.04, 0.045, 0.05, 0.055, 0.06])
+        >>> vols = np.array([0.25, 0.22, 0.20, 0.19, 0.185])
+        >>> r = sabr_calibrate(strikes, vols, f=0.05, t=1.0, beta=0.5)
+    """
+    return _sabr_calibrate(
+        np.asarray(strikes, dtype=np.float64),
+        np.asarray(market_vols, dtype=np.float64),
+        f=f, t=t, beta=beta, shift=shift,
+        max_iter=max_iter, tol=tol,
+    )
 
 
 def lsmc_american_option(

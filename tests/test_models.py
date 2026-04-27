@@ -268,6 +268,84 @@ class TestSabrImpliedVol:
 
 
 # ---------------------------------------------------------------------------
+# SABR Calibration
+# ---------------------------------------------------------------------------
+
+class TestSabrCalibrate:
+    def _smile(self, f, t, alpha, beta, rho, nu, shift=0.0, n=7, width=0.3):
+        ks = f + (f + shift) * np.linspace(-width, width, n)
+        vols = np.array([
+            stocha.sabr_implied_vol(f=f, k=k, t=t, alpha=alpha, beta=beta,
+                                    rho=rho, nu=nu, shift=shift)
+            for k in ks
+        ])
+        return ks, vols
+
+    def test_round_trip_lognormal(self):
+        # β=1: synthetic smile → recover (α, ρ, ν).
+        f, t = 0.05, 1.0
+        ks, vols = self._smile(f, t, alpha=0.20, beta=1.0, rho=-0.3, nu=0.4)
+        r = stocha.sabr_calibrate(ks, vols, f=f, t=t, beta=1.0)
+        assert r["converged"]
+        assert r["rmse"] < 1e-6
+        assert abs(r["alpha"] - 0.20) / 0.20 < 0.01
+        assert abs(r["rho"] - (-0.3)) < 0.02
+        assert abs(r["nu"] - 0.4) < 0.02
+
+    def test_round_trip_beta_half(self):
+        f, t = 0.05, 1.0
+        ks, vols = self._smile(f, t, alpha=0.025, beta=0.5, rho=-0.5, nu=0.5)
+        r = stocha.sabr_calibrate(ks, vols, f=f, t=t, beta=0.5)
+        assert r["converged"]
+        assert r["rmse"] < 1e-6
+        assert abs(r["alpha"] - 0.025) / 0.025 < 0.01
+        assert abs(r["rho"] - (-0.5)) < 0.02
+        assert abs(r["nu"] - 0.5) < 0.02
+
+    def test_round_trip_shifted(self):
+        f, t, sh = -0.005, 1.0, 0.03
+        ks, vols = self._smile(f, t, alpha=0.003, beta=0.5,
+                               rho=-0.3, nu=0.3, shift=sh)
+        r = stocha.sabr_calibrate(ks, vols, f=f, t=t, beta=0.5, shift=sh)
+        assert r["converged"]
+        assert r["rmse"] < 1e-5
+        assert abs(r["rho"] - (-0.3)) < 0.05
+        assert abs(r["nu"] - 0.3) < 0.05
+
+    def test_length_mismatch(self):
+        with pytest.raises(ValueError):
+            stocha.sabr_calibrate(np.array([0.04, 0.05, 0.06]),
+                                  np.array([0.2, 0.2]),
+                                  f=0.05, t=1.0)
+
+    def test_too_few_points(self):
+        with pytest.raises(ValueError):
+            stocha.sabr_calibrate(np.array([0.04, 0.05]),
+                                  np.array([0.2, 0.2]),
+                                  f=0.05, t=1.0)
+
+    def test_nan_input(self):
+        with pytest.raises(ValueError):
+            stocha.sabr_calibrate(np.array([0.04, 0.05, 0.06]),
+                                  np.array([0.2, np.nan, 0.18]),
+                                  f=0.05, t=1.0)
+
+    def test_shift_invalid(self):
+        # F + shift = 0 → invalid.
+        with pytest.raises(ValueError):
+            stocha.sabr_calibrate(np.array([0.01, 0.02, 0.03]),
+                                  np.array([0.2, 0.2, 0.2]),
+                                  f=-0.03, t=1.0, shift=0.03)
+
+    def test_deterministic(self):
+        f, t = 0.05, 1.0
+        ks, vols = self._smile(f, t, alpha=0.2, beta=0.5, rho=-0.3, nu=0.4)
+        r1 = stocha.sabr_calibrate(ks, vols, f=f, t=t, beta=0.5)
+        r2 = stocha.sabr_calibrate(ks, vols, f=f, t=t, beta=0.5)
+        assert r1 == r2
+
+
+# ---------------------------------------------------------------------------
 # LSMC American Option
 # ---------------------------------------------------------------------------
 

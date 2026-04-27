@@ -13,12 +13,14 @@ use finance::hull_white::{hull_white_paths, HullWhiteParams};
 use finance::jump_diffusion::{merton_paths, MertonParams};
 use finance::lsmc::{lsmc_american_option as lsmc_price, LsmcParams};
 use finance::sabr::sabr_implied_vol as sabr_vol;
+use finance::sabr_calibration::calibrate as sabr_calibrate_core;
 use qrng::{halton_sequence, sobol_sequence};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use ndarray::Array2;
 use prng::Pcg64Dxsm;
 use risk::var_cvar as compute_var_cvar;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 /// Convert an owned `Array2<f64>` into a Python NumPy array.
 fn into_py_array2<'py>(arr: Array2<f64>, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
@@ -580,6 +582,62 @@ fn sabr_implied_vol<'py>(
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
 }
 
+/// Calibrate SABR parameters (alpha, rho, nu) to an observed implied-vol smile.
+///
+/// Beta is held fixed (typically 0.5). The ATM alpha is recovered exactly by a
+/// 1-D root-find on the Hagan ATM formula; (rho, nu) are then fit by a
+/// Projected Levenberg-Marquardt loop with central-difference Jacobian.
+///
+/// Args:
+///     strikes:      1-D NumPy array of strikes K_i (must straddle the forward).
+///     market_vols:  1-D NumPy array of observed Black implied vols.
+///     f:            Forward price or rate.
+///     t:            Time to expiry in years (must be > 0).
+///     beta:         CEV exponent in [0, 1] (default ``0.5``).
+///     shift:        Shift for negative-rate support (default ``0.0``).
+///     max_iter:     Maximum LM iterations (default ``100``).
+///     tol:          Convergence tolerance (default ``1e-10``).
+///
+/// Returns:
+///     Dict with keys ``alpha``, ``rho``, ``nu``, ``rmse``, ``iterations``,
+///     ``converged``.
+///
+/// Example:
+///     >>> import numpy as np
+///     >>> strikes = np.array([0.04, 0.045, 0.05, 0.055, 0.06])
+///     >>> vols = np.array([0.25, 0.22, 0.20, 0.19, 0.185])
+///     >>> r = stocha.sabr_calibrate(strikes, vols, f=0.05, t=1.0, beta=0.5)
+///     >>> r["alpha"], r["rho"], r["nu"]
+#[pyfunction]
+#[pyo3(signature = (strikes, market_vols, f, t, beta=0.5, shift=0.0, max_iter=100, tol=1e-10))]
+fn sabr_calibrate<'py>(
+    py: Python<'py>,
+    strikes: PyReadonlyArray1<'py, f64>,
+    market_vols: PyReadonlyArray1<'py, f64>,
+    f: f64,
+    t: f64,
+    beta: f64,
+    shift: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let strikes_vec: Vec<f64> = strikes.as_array().iter().copied().collect();
+    let vols_vec: Vec<f64> = market_vols.as_array().iter().copied().collect();
+    let result = sabr_calibrate_core(
+        &strikes_vec, &vols_vec, f, t, beta, shift, max_iter, tol,
+    )
+    .map_err(pyo3::exceptions::PyValueError::new_err)?;
+
+    let dict = PyDict::new(py);
+    dict.set_item("alpha", result.alpha)?;
+    dict.set_item("rho", result.rho)?;
+    dict.set_item("nu", result.nu)?;
+    dict.set_item("rmse", result.rmse)?;
+    dict.set_item("iterations", result.iterations)?;
+    dict.set_item("converged", result.converged)?;
+    Ok(dict)
+}
+
 /// Price an American option via Longstaff-Schwartz Monte Carlo (LSMC).
 ///
 /// Simulates GBM paths under the risk-neutral measure, then uses backward
@@ -667,7 +725,8 @@ fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(student_t_copula, m)?)?;
     m.add_function(wrap_pyfunction!(hull_white, m)?)?;
     m.add_function(wrap_pyfunction!(sabr_implied_vol, m)?)?;
+    m.add_function(wrap_pyfunction!(sabr_calibrate, m)?)?;
     m.add_function(wrap_pyfunction!(lsmc_american_option, m)?)?;
-    m.add("__version__", "0.3.2")?;
+    m.add("__version__", "1.1.0")?;
     Ok(())
 }

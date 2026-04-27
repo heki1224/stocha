@@ -104,6 +104,12 @@ iv = stocha.sabr_implied_vol(
 )
 print(f"SABR ATM implied vol: {iv:.4f}")
 
+# ── SABR キャリブレーション: 市場スマイルから (α, ρ, ν) を復元 ──────────
+strikes = np.array([0.04, 0.045, 0.05, 0.055, 0.06])
+market_vols = np.array([0.244, 0.218, 0.201, 0.190, 0.184])
+fit = stocha.sabr_calibrate(strikes, market_vols, f=0.05, t=1.0, beta=0.5)
+print(f"calibrated: alpha={fit['alpha']:.4f}, rho={fit['rho']:.4f}, nu={fit['nu']:.4f}")
+
 # ── LSMC によるアメリカンオプション価格付け ───────────────────────────────
 price, std_err = stocha.lsmc_american_option(
     s0=100.0, k=100.0, r=0.05, sigma=0.20,
@@ -144,6 +150,7 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | `gaussian_copula(corr, n_samples)` | ガウスコピュラ サンプル |
 | `student_t_copula(corr, nu, n_samples)` | Student-t コピュラ サンプル |
 | `sabr_implied_vol(f, k, t, alpha, beta, rho, nu, shift)` | SABR Black インプライドボラティリティ |
+| `sabr_calibrate(strikes, market_vols, f, t, beta, shift, ...)` | 観測 IV スマイルへ SABR `(α, ρ, ν)` をフィット（射影 LM ＋ ATM α の 1 次元 Brent） |
 | `lsmc_american_option(s0, k, r, sigma, t, steps, n_paths, ...)` | LSMC によるアメリカンオプション価格付け |
 
 ## パフォーマンス（Apple M シリーズ、リリースビルド）
@@ -180,7 +187,8 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | **v0.2** | Sobol 列（Joe & Kuo 2008）、Halton 列、Heston モデル、Merton Jump-Diffusion |
 | **v0.3** | VaR/CVaR、ガウス/Student-t コピュラ、Hull-White、SABR、LSMC |
 | **v1.0** ✅ | Ziggurat サンプラー（正規分布サンプリング約 3 倍高速化） |
-| **v1.1** | DLPack ゼロコピー、SABR/Heston キャリブレーション |
+| **v1.1** ✅ | SABR キャリブレーション（`sabr_calibrate`） |
+| **v1.2** | DLPack ゼロコピー、Heston キャリブレーション |
 
 ## ライセンス
 

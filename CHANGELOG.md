@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-27
+
+### Added
+
+- **`sabr_calibrate`**: Fit SABR parameters `(α, ρ, ν)` to an observed Black
+  implied-vol smile. The ATM α is recovered exactly by 1-D Brent root-finding
+  on the Hagan ATM formula; `(ρ, ν)` are then fit by a Projected
+  Levenberg-Marquardt loop with central-difference Jacobian and step
+  clipping for box constraints. β is held fixed (industry standard).
+  Supports negative rates via the same `shift` parameter as
+  `sabr_implied_vol`. Returns a dict with `alpha`, `rho`, `nu`, `rmse`,
+  `iterations`, `converged`.
+- `examples/06_interest_rate.py` (and `.ja.py`): added a calibration demo
+  that recovers `(α, ρ, ν)` from a synthetic smile.
+
 ## [1.0.0] - 2026-04-24
 
 ### Changed
@@ -135,7 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `standard_normal(10M samples)` | ~155M samples/sec |
 | `gbm(n_paths=100k, steps=252)` | ~680k paths/sec |
 
-[Unreleased]: https://github.com/heki1224/stocha/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/heki1224/stocha/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/heki1224/stocha/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/heki1224/stocha/compare/v0.3.3...v1.0.0
 [0.3.3]: https://github.com/heki1224/stocha/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/heki1224/stocha/compare/v0.3.1...v0.3.2
