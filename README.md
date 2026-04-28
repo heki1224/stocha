@@ -128,8 +128,8 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 | `RNG.standard_normal(size)` | Sample from N(0, 1) |
 | `RNG.normal(size, loc, scale)` | Sample from N(loc, scale²) |
 | `RNG.uniform(size)` | Sample from Uniform[0, 1) |
-| `RNG.save_state()` | Serialize seed to JSON string (records seed only, not stream position) |
-| `RNG.from_state(json)` | Restore RNG from JSON produced by `save_state`; equivalent to `RNG(seed=original_seed)` |
+| `RNG.save_state()` | Serialize full RNG state to JSON (supports mid-stream checkpointing) |
+| `RNG.from_state(json)` | Restore RNG from JSON; accepts full-state (v1.2+) and legacy seed-only format |
 | `sobol(dim, n_samples)` | Sobol low-discrepancy sequence (Joe & Kuo 2008). For high-dim or large-N use cases, `scipy.stats.qmc.Sobol` is significantly faster. |
 | `halton(dim, n_samples, skip)` | Halton low-discrepancy sequence |
 
@@ -138,7 +138,7 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 | Function | Description |
 |---|---|
 | `gbm(s0, mu, sigma, t, steps, n_paths, ...)` | Geometric Brownian Motion (Euler-Maruyama, Rayon-parallel) |
-| `heston(s0, v0, mu, kappa, theta, xi, rho, ...)` | Heston stochastic volatility (Full Truncation scheme) |
+| `heston(s0, v0, mu, kappa, theta, xi, rho, ..., scheme)` | Heston stochastic volatility (`"euler"` Full Truncation or `"qe"` Andersen QE) |
 | `merton_jump_diffusion(s0, mu, sigma, lambda_, ...)` | Merton Jump-Diffusion with lognormal jumps |
 | `hull_white(r0, a, theta, sigma, t, steps, n_paths)` | Hull-White 1-factor short rate (Exact Simulation) |
 
@@ -190,7 +190,8 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v0.3** | VaR/CVaR, Gaussian/Student-t copula, Hull-White, SABR, LSMC |
 | **v1.0** ✅ | Ziggurat sampler (~3× faster normal sampling) |
 | **v1.1** ✅ | SABR calibration (`sabr_calibrate`) |
-| **v1.2** | DLPack zero-copy, Heston calibration utilities |
+| **v1.2** ✅ | Full RNG state serialization, Heston QE scheme |
+| **v1.3** | DLPack zero-copy, Heston calibration utilities |
 
 ## License
 

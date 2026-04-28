@@ -128,8 +128,8 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | `RNG.standard_normal(size)` | N(0, 1) からサンプリング |
 | `RNG.normal(size, loc, scale)` | N(loc, scale²) からサンプリング |
 | `RNG.uniform(size)` | Uniform[0, 1) からサンプリング |
-| `RNG.save_state()` | シードを JSON 文字列にシリアライズ（ストリーム位置ではなくシード値のみ記録） |
-| `RNG.from_state(json)` | `save_state` が返した JSON から RNG を復元（`RNG(seed=original_seed)` と等価） |
+| `RNG.save_state()` | RNG の完全な内部状態を JSON にシリアライズ（途中位置からのチェックポイント対応） |
+| `RNG.from_state(json)` | JSON から RNG を復元。full-state（v1.2+）と旧 seed-only 形式の両方に対応 |
 | `sobol(dim, n_samples)` | Sobol 低差異列（Joe & Kuo 2008）。高次元・大量サンプル用途では `scipy.stats.qmc.Sobol` の方が大幅に高速。 |
 | `halton(dim, n_samples, skip)` | Halton 低差異列 |
 
@@ -138,7 +138,7 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | 関数 | 説明 |
 |---|---|
 | `gbm(s0, mu, sigma, t, steps, n_paths, ...)` | 幾何ブラウン運動（Euler-Maruyama、Rayon 並列） |
-| `heston(s0, v0, mu, kappa, theta, xi, rho, ...)` | Heston ストキャスティックボラティリティ（Full Truncation スキーム） |
+| `heston(s0, v0, mu, kappa, theta, xi, rho, ..., scheme)` | Heston ストキャスティックボラティリティ（`"euler"` Full Truncation / `"qe"` Andersen QE） |
 | `merton_jump_diffusion(s0, mu, sigma, lambda_, ...)` | Merton ジャンプ拡散（対数正規ジャンプ） |
 | `hull_white(r0, a, theta, sigma, t, steps, n_paths)` | Hull-White 1因子短期金利（Exact Simulation） |
 
@@ -188,7 +188,8 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | **v0.3** | VaR/CVaR、ガウス/Student-t コピュラ、Hull-White、SABR、LSMC |
 | **v1.0** ✅ | Ziggurat サンプラー（正規分布サンプリング約 3 倍高速化） |
 | **v1.1** ✅ | SABR キャリブレーション（`sabr_calibrate`） |
-| **v1.2** | DLPack ゼロコピー、Heston キャリブレーション |
+| **v1.2** ✅ | 完全 RNG 状態シリアライズ、Heston QE スキーム |
+| **v1.3** | DLPack ゼロコピー、Heston キャリブレーション |
 
 ## ライセンス
 

@@ -1339,6 +1339,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
 dependencies = [
  "rand_core 0.10.1",
+ "serde",
 ]
 
 [[package]]
@@ -1582,7 +1583,7 @@ dependencies = [
 
 [[package]]
 name = "stocha"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "approx",
  "faer",

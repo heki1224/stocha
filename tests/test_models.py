@@ -128,6 +128,56 @@ class TestHeston:
         with pytest.raises((ValueError, Exception)):
             stocha.heston(**kw)
 
+    def test_invalid_scheme(self):
+        kw = self._kw()
+        with pytest.raises((ValueError, Exception)):
+            stocha.heston(**kw, scheme="bad")
+
+
+class TestHestonQE:
+    def _kw(self, n_paths=1000):
+        return dict(
+            s0=100.0, v0=0.04, mu=0.05, kappa=2.0, theta=0.04,
+            xi=0.3, rho=-0.7, t=1.0, steps=252, n_paths=n_paths,
+            seed=42, scheme="qe",
+        )
+
+    def test_output_shape(self):
+        paths = stocha.heston(**self._kw())
+        assert paths.shape == (1000, 253)
+
+    def test_positive_prices(self):
+        paths = stocha.heston(**self._kw())
+        assert (paths > 0).all()
+
+    def test_reproducibility(self):
+        kw = self._kw()
+        np.testing.assert_array_equal(stocha.heston(**kw), stocha.heston(**kw))
+
+    def test_expected_terminal_price(self):
+        paths = stocha.heston(**self._kw(n_paths=100_000))
+        mean_terminal = paths[:, -1].mean()
+        expected = 100.0 * math.exp(0.05)
+        assert pytest.approx(mean_terminal, rel=2e-2) == expected
+
+    def test_feller_violated_stability(self):
+        paths = stocha.heston(
+            s0=100.0, v0=0.04, mu=0.05, kappa=1.0, theta=0.04,
+            xi=0.3, rho=-0.7, t=1.0, steps=252, n_paths=5000,
+            seed=77, scheme="qe",
+        )
+        assert paths.shape == (5000, 253)
+        assert (paths > 0).all()
+
+    def test_euler_default_backward_compat(self):
+        kw = dict(
+            s0=100.0, v0=0.04, mu=0.05, kappa=2.0, theta=0.04,
+            xi=0.3, rho=-0.7, t=1.0, steps=50, n_paths=10, seed=42,
+        )
+        default_paths = stocha.heston(**kw)
+        euler_paths = stocha.heston(**kw, scheme="euler")
+        np.testing.assert_array_equal(default_paths, euler_paths)
+
 
 # ---------------------------------------------------------------------------
 # Merton Jump-Diffusion

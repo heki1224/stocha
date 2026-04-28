@@ -54,12 +54,27 @@ class TestRNG:
         assert len(state) > 0
 
     def test_from_state_roundtrip(self):
-        # from_state restores from seed — output matches a fresh RNG with same seed.
         rng = stocha.RNG(seed=123)
         state = rng.save_state()
         restored = stocha.RNG.from_state(state)
-        expected = stocha.RNG(seed=123).normal(size=50)
-        np.testing.assert_array_equal(restored.normal(size=50), expected)
+        np.testing.assert_array_equal(
+            restored.normal(size=50), stocha.RNG(seed=123).normal(size=50)
+        )
+
+    def test_full_state_mid_stream_roundtrip(self):
+        rng = stocha.RNG(seed=42)
+        _ = rng.normal(size=500)
+        state = rng.save_state()
+        expected = rng.normal(size=100)
+        restored = stocha.RNG.from_state(state)
+        np.testing.assert_array_equal(restored.normal(size=100), expected)
+
+    def test_legacy_seed_only_format(self):
+        restored = stocha.RNG.from_state('{"seed":42}')
+        fresh = stocha.RNG(seed=42)
+        np.testing.assert_array_equal(
+            restored.normal(size=50), fresh.normal(size=50)
+        )
 
     def test_from_state_invalid_json(self):
         with pytest.raises(Exception):

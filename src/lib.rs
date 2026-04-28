@@ -8,7 +8,7 @@ mod risk;
 use copula::{gaussian_copula_samples, student_t_copula_samples};
 use dist::NormalSampler;
 use finance::gbm::{gbm_paths, GbmParams};
-use finance::heston::{heston_paths, HestonParams};
+use finance::heston::{heston_paths_with_scheme, HestonParams, HestonScheme};
 use finance::hull_white::{hull_white_paths, HullWhiteParams};
 use finance::jump_diffusion::{merton_paths, MertonParams};
 use finance::lsmc::{lsmc_american_option as lsmc_price, LsmcParams};
@@ -111,32 +111,29 @@ impl RNG {
         Ok(buf.into_pyarray(py))
     }
 
-    /// Serialize the seed to a JSON string.
+    /// Serialize the full RNG state to a JSON string.
     ///
-    /// **Important limitation**: records the *original seed only*, not the full
-    /// internal generator state. Restoring via ``from_state`` reconstructs the RNG
-    /// from scratch (equivalent to ``RNG(seed=original_seed)``), which replays the
-    /// sequence **from the beginning** — not from the position at which ``save_state``
-    /// was called. Suitable for audit trails and fixed-seed reproducibility; not for
-    /// mid-stream checkpointing.
+    /// Captures the exact internal position of the generator, enabling
+    /// mid-stream checkpointing. Restoring via ``from_state`` resumes
+    /// the sequence from the saved position.
     ///
     /// Returns:
-    ///     JSON string, e.g. ``'{"seed":42}'``.
+    ///     JSON string containing the full generator state.
     fn save_state(&self) -> String {
         self.inner.save_state()
     }
 
     /// Restore an RNG from a JSON string produced by :meth:`save_state`.
     ///
-    /// The restored RNG is identical to ``RNG(seed=original_seed)`` — it starts
-    /// from the beginning of the sequence regardless of how far the original RNG
-    /// had advanced. See :meth:`save_state` for the full limitation description.
+    /// Accepts both the full-state format (v1.2+) and the legacy seed-only
+    /// format (``{"seed": N}``). Full-state restores the exact position;
+    /// seed-only restarts from the beginning.
     ///
     /// Args:
     ///     json: JSON string as returned by :meth:`save_state`.
     ///
     /// Returns:
-    ///     New ``RNG`` instance seeded from the recorded value.
+    ///     New ``RNG`` instance.
     #[staticmethod]
     fn from_state(json: &str) -> PyResult<RNG> {
         let inner = Pcg64Dxsm::from_state(json)
@@ -259,9 +256,6 @@ fn halton_seq<'py>(
 
 /// Simulate Heston stochastic volatility paths.
 ///
-/// Uses Euler-Maruyama discretization with the Full Truncation (FT) scheme to
-/// handle negative variance states without bias.
-///
 /// Args:
 ///     s0:     Initial asset price (must be > 0).
 ///     v0:     Initial variance (not volatility; e.g. 0.04 for 20% vol).
@@ -274,11 +268,14 @@ fn halton_seq<'py>(
 ///     steps:  Number of time steps.
 ///     n_paths: Number of simulation paths.
 ///     seed:   Random seed (default 42).
+///     scheme: Discretization scheme: ``"euler"`` (Full Truncation) or ``"qe"``
+///             (Andersen 2008 Quadratic Exponential with martingale correction).
+///             Default ``"euler"``.
 ///
 /// Returns:
 ///     NumPy array of shape ``(n_paths, steps + 1)``.
 #[pyfunction]
-#[pyo3(signature = (s0, v0, mu, kappa, theta, xi, rho, t, steps, n_paths, seed=42))]
+#[pyo3(signature = (s0, v0, mu, kappa, theta, xi, rho, t, steps, n_paths, seed=42, scheme="euler"))]
 fn heston<'py>(
     py: Python<'py>,
     s0: f64,
@@ -292,6 +289,7 @@ fn heston<'py>(
     steps: usize,
     n_paths: usize,
     seed: u64,
+    scheme: &str,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     if s0 <= 0.0 {
         return Err(pyo3::exceptions::PyValueError::new_err("s0 must be positive"));
@@ -319,9 +317,16 @@ fn heston<'py>(
             "steps and n_paths must be positive",
         ));
     }
+    let heston_scheme = match scheme {
+        "euler" => HestonScheme::Euler,
+        "qe" => HestonScheme::QE,
+        _ => return Err(pyo3::exceptions::PyValueError::new_err(
+            "scheme must be 'euler' or 'qe'",
+        )),
+    };
 
     let params = HestonParams { s0, v0, mu, kappa, theta, xi, rho, t, steps, n_paths };
-    let result = py.detach(|| heston_paths(&params, seed as u128));
+    let result = py.detach(|| heston_paths_with_scheme(&params, seed as u128, heston_scheme));
     into_py_array2(result, py)
 }
 

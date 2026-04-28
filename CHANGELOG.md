@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-28
+
+### Changed
+
+- **`RNG.save_state()`**: Now serializes the full internal RNG state (position +
+  seed), enabling mid-stream checkpointing. Previously recorded seed only.
+  `from_state()` accepts both the new full-state format and the legacy
+  `{"seed": N}` format for backward compatibility.
+
+### Added
+
+- **Heston QE scheme**: `heston(..., scheme="qe")` selects the Andersen (2008)
+  Quadratic Exponential discretization with martingale-corrected log-price
+  update. More accurate than Euler-FT with fewer time steps, especially when
+  the Feller condition is violated. Default remains `"euler"` for backward
+  compatibility.
+
+### Dependencies
+
+- `rand_pcg`: added `serde` feature for RNG state serialization
+- `serde_json`: added `arbitrary_precision` feature for u128 round-trip
+
 ## [1.1.0] - 2026-04-27
 
 ### Added
@@ -150,7 +172,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `standard_normal(10M samples)` | ~155M samples/sec |
 | `gbm(n_paths=100k, steps=252)` | ~680k paths/sec |
 
-[Unreleased]: https://github.com/heki1224/stocha/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/heki1224/stocha/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/heki1224/stocha/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/heki1224/stocha/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/heki1224/stocha/compare/v0.3.3...v1.0.0
 [0.3.3]: https://github.com/heki1224/stocha/compare/v0.3.2...v0.3.3

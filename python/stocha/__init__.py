@@ -121,15 +121,14 @@ class RNG:
         return self._inner.normal(size=size, loc=loc, scale=scale)
 
     def save_state(self) -> str:
-        """Serialize the seed to a JSON string.
+        """Serialize the full RNG state to a JSON string.
 
-        **Limitation**: records the *original seed only*, not the full internal
-        generator state. Restoring via :meth:`from_state` reconstructs the RNG
-        from scratch — it replays the sequence **from the beginning**, not from
-        the position at which ``save_state`` was called.
+        Captures the exact internal position, enabling mid-stream
+        checkpointing. Restoring via :meth:`from_state` resumes the
+        sequence from the saved position.
 
         Returns:
-            JSON string, e.g. ``'{"seed":42}'``.
+            JSON string containing the full generator state.
         """
         return self._inner.save_state()
 
@@ -137,15 +136,15 @@ class RNG:
     def from_state(cls, json: str) -> "RNG":
         """Restore an RNG from a JSON string produced by :meth:`save_state`.
 
-        The restored RNG is identical to ``RNG(seed=original_seed)`` — it starts
-        from the beginning of the sequence regardless of how far the original RNG
-        had advanced.
+        Accepts both full-state (v1.2+) and legacy seed-only format.
+        Full-state restores the exact position; seed-only restarts
+        from the beginning.
 
         Args:
             json: JSON string as returned by :meth:`save_state`.
 
         Returns:
-            New ``RNG`` instance seeded from the recorded value.
+            New ``RNG`` instance.
         """
         inner = _RNG.from_state(json)
         obj = cls.__new__(cls)
@@ -260,12 +259,9 @@ def heston(
     steps: int,
     n_paths: int,
     seed: int = 42,
+    scheme: Literal["euler", "qe"] = "euler",
 ) -> np.ndarray:
     """Simulate Heston stochastic volatility paths.
-
-    Uses Euler-Maruyama with the Full Truncation (FT) scheme so that
-    the variance process v(t) can go negative between steps (reducing
-    discretization bias near the boundary).
 
     Args:
         s0:     Initial asset price (must be > 0).
@@ -279,6 +275,10 @@ def heston(
         steps:  Number of time steps (e.g. 252 for daily over 1 year).
         n_paths: Number of simulation paths.
         seed:   Random seed (default ``42``).
+        scheme: Discretization scheme (default ``"euler"``).
+                ``"euler"``: Full Truncation Euler-Maruyama.
+                ``"qe"``: Andersen (2008) Quadratic Exponential with
+                martingale correction. More accurate with fewer steps.
 
     Returns:
         NumPy array of shape ``(n_paths, steps + 1)``.
@@ -294,6 +294,7 @@ def heston(
     return _heston(
         s0=s0, v0=v0, mu=mu, kappa=kappa, theta=theta,
         xi=xi, rho=rho, t=t, steps=steps, n_paths=n_paths, seed=seed,
+        scheme=scheme,
     )
 
 

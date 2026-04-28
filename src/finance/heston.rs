@@ -3,51 +3,47 @@ use crate::prng::Pcg64Dxsm;
 use ndarray::Array2;
 use rayon::prelude::*;
 
-/// Parameters for a Heston stochastic volatility simulation.
 #[derive(Debug, Clone)]
 pub struct HestonParams {
-    /// Initial asset price.
     pub s0: f64,
-    /// Initial variance (not volatility; v0 = sigma0^2).
     pub v0: f64,
-    /// Drift rate (annualized).
     pub mu: f64,
-    /// Mean-reversion speed of variance.
     pub kappa: f64,
-    /// Long-run mean of variance.
     pub theta: f64,
-    /// Volatility of variance (vol-of-vol).
     pub xi: f64,
-    /// Correlation between asset and variance Brownian motions.
     pub rho: f64,
-    /// Time to maturity in years.
     pub t: f64,
-    /// Number of time steps.
     pub steps: usize,
-    /// Number of simulation paths.
     pub n_paths: usize,
 }
 
-/// Simulate Heston stochastic volatility paths using the Full Truncation (FT) scheme.
-///
-/// Discretization (Euler-Maruyama with Full Truncation):
-///   v+ = max(v, 0)          — used only for drift/diffusion, v itself may go negative
-///   v(t+dt) = v + kappa*(theta - v+)*dt + xi*sqrt(v+)*sqrt(dt)*dW2
-///   S(t+dt) = S * exp((mu - 0.5*v+)*dt + sqrt(v+)*sqrt(dt)*dW1)
-///   dW2 = rho*dW1 + sqrt(1 - rho^2)*dZ   (correlated Brownians)
-///
-/// Using Absorption (max(v,0)) for the state update would introduce positive bias
-/// near the boundary. FT avoids this by preserving the sign of v between steps.
-///
-/// # Returns
-/// An `Array2<f64>` of shape `(n_paths, steps + 1)`.
-/// Column 0 is the initial price `s0`; column `steps` is the terminal price.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HestonScheme {
+    Euler,
+    QE,
+}
+
+/// Simulate Heston paths using the Full Truncation (FT) Euler scheme.
 pub fn heston_paths(params: &HestonParams, seed: u128) -> Array2<f64> {
+    heston_euler(params, seed)
+}
+
+/// Simulate Heston paths with a chosen scheme.
+pub fn heston_paths_with_scheme(
+    params: &HestonParams,
+    seed: u128,
+    scheme: HestonScheme,
+) -> Array2<f64> {
+    match scheme {
+        HestonScheme::Euler => heston_euler(params, seed),
+        HestonScheme::QE => heston_qe(params, seed),
+    }
+}
+
+fn heston_euler(params: &HestonParams, seed: u128) -> Array2<f64> {
     let dt = params.t / params.steps as f64;
     let sqrt_dt = dt.sqrt();
     let rho_comp = (1.0 - params.rho * params.rho).sqrt();
-
-    // Two normals per step (dW1, dZ). Conservative block size with buffer.
     let block_size: u128 = (params.steps as u128 + 1024) * 6;
 
     let simulate = |path_idx: usize| -> Vec<f64> {
@@ -62,18 +58,14 @@ pub fn heston_paths(params: &HestonParams, seed: u128) -> Array2<f64> {
         for _ in 0..params.steps {
             let dw1 = NormalSampler::sample(&mut rng);
             let dz = NormalSampler::sample(&mut rng);
-            // Correlated Brownian for variance
             let dw2 = params.rho * dw1 + rho_comp * dz;
 
-            // Full Truncation: v_plus used for all calculations, but v state is unrestricted
             let v_plus = v.max(0.0);
             let sqrt_v = v_plus.sqrt();
 
-            // Update variance state (may go negative — intentional in FT scheme)
             v += params.kappa * (params.theta - v_plus) * dt
                 + params.xi * sqrt_v * sqrt_dt * dw2;
 
-            // Update stock price using log-Euler scheme
             s *= ((params.mu - 0.5 * v_plus) * dt + sqrt_v * sqrt_dt * dw1).exp();
             path.push(s);
         }
@@ -94,6 +86,97 @@ pub fn heston_paths(params: &HestonParams, seed: u128) -> Array2<f64> {
     result
 }
 
+const PSI_C: f64 = 1.5;
+
+fn heston_qe(params: &HestonParams, seed: u128) -> Array2<f64> {
+    let dt = params.t / params.steps as f64;
+    let e_kdt = (-params.kappa * dt).exp();
+    let k1 = params.kappa * params.theta;
+
+    // QE uses 2 uniforms + 1 normal per step (variance sampling + asset update)
+    let block_size: u128 = (params.steps as u128 + 1024) * 6;
+
+    let simulate = |path_idx: usize| -> Vec<f64> {
+        let mut rng = Pcg64Dxsm::new(seed);
+        rng.advance(path_idx as u128 * block_size);
+
+        let mut path = Vec::with_capacity(params.steps + 1);
+        path.push(params.s0);
+        let mut s = params.s0;
+        let mut v = params.v0;
+
+        for _ in 0..params.steps {
+            let v_plus = v.max(0.0);
+
+            // Conditional mean and variance of V(t+dt) given V(t)
+            let m = k1 * (1.0 - e_kdt) / params.kappa + v_plus * e_kdt;
+            let m = m.max(1e-15);
+            let s2 = v_plus * params.xi * params.xi * e_kdt
+                * (1.0 - e_kdt) / params.kappa
+                + k1 * params.xi * params.xi
+                    * (1.0 - e_kdt).powi(2)
+                    / (2.0 * params.kappa * params.kappa);
+            let psi = s2 / (m * m);
+
+            let v_next = if psi <= PSI_C {
+                // Quadratic branch: V ~ a*(b + Z)^2
+                let b2 = 2.0 / psi - 1.0
+                    + (2.0 / psi * (2.0 / psi - 1.0)).sqrt();
+                let b2 = b2.max(0.0);
+                let a = m / (1.0 + b2);
+                let b = b2.sqrt();
+                let z = NormalSampler::sample(&mut rng);
+                a * (b + z) * (b + z)
+            } else {
+                // Exponential branch: V ~ mixed point-mass at 0 + exponential
+                let p = (psi - 1.0) / (psi + 1.0);
+                let beta = (1.0 - p) / m;
+                let u = rng.next_f64();
+                if u <= p {
+                    0.0
+                } else {
+                    ((1.0 - p) / (1.0 - u)).ln() / beta
+                }
+            };
+
+            let v_next = v_next.max(0.0);
+
+            // Andersen (2008) log-price update
+            let z1 = NormalSampler::sample(&mut rng);
+            let kappa_rho_xi = params.kappa * params.rho / params.xi;
+            let gamma1 = 0.5;
+            let gamma2 = 0.5;
+            let k0_s = (params.mu - kappa_rho_xi * params.theta) * dt;
+            let k1_s = gamma1 * dt * (kappa_rho_xi - 0.5) - params.rho / params.xi;
+            let k2_s = gamma2 * dt * (kappa_rho_xi - 0.5) + params.rho / params.xi;
+            let k3_s = gamma1 * dt * (1.0 - params.rho * params.rho);
+            let k4_s = gamma2 * dt * (1.0 - params.rho * params.rho);
+
+            let var_term = (k3_s * v_plus + k4_s * v_next).max(0.0);
+            let log_s = s.ln() + k0_s + k1_s * v_plus + k2_s * v_next
+                + var_term.sqrt() * z1;
+
+            s = log_s.clamp(-500.0, 500.0).exp();
+            v = v_next;
+            path.push(s);
+        }
+        path
+    };
+
+    let paths: Vec<Vec<f64>> = (0..params.n_paths)
+        .into_par_iter()
+        .map(|i| simulate(i))
+        .collect();
+
+    let mut result = Array2::<f64>::zeros((params.n_paths, params.steps + 1));
+    for (i, path) in paths.iter().enumerate() {
+        for (j, &val) in path.iter().enumerate() {
+            result[[i, j]] = val;
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,7 +184,7 @@ mod tests {
     fn default_params() -> HestonParams {
         HestonParams {
             s0: 100.0,
-            v0: 0.04, // sigma0 = 0.2
+            v0: 0.04,
             mu: 0.05,
             kappa: 2.0,
             theta: 0.04,
@@ -142,7 +225,6 @@ mod tests {
 
     #[test]
     fn test_expected_terminal_price() {
-        // Under Heston, E[S(T)] = S0 * exp(mu * T) (same as risk-neutral drift)
         let params = HestonParams {
             n_paths: 100_000,
             ..default_params()
@@ -156,11 +238,9 @@ mod tests {
 
     #[test]
     fn test_feller_condition_violated_stability() {
-        // 2*kappa*theta < xi^2 → variance process hits zero; Full Truncation should
-        // keep the simulation numerically stable (no panic, all prices positive).
         let params = HestonParams {
             kappa: 1.0,
-            theta: 0.04,  // 2*kappa*theta = 0.08 < xi^2 = 0.09 → Feller violated
+            theta: 0.04,
             xi: 0.3,
             n_paths: 5_000,
             ..default_params()
@@ -168,5 +248,53 @@ mod tests {
         let paths = heston_paths(&params, 77);
         assert_eq!(paths.shape(), &[5_000, 253]);
         assert!(paths.iter().all(|&v| v > 0.0), "negative price under Feller violation");
+    }
+
+    // QE tests
+    #[test]
+    fn test_qe_output_shape() {
+        let paths = heston_paths_with_scheme(&default_params(), 42, HestonScheme::QE);
+        assert_eq!(paths.shape(), &[1000, 253]);
+    }
+
+    #[test]
+    fn test_qe_reproducibility() {
+        let params = default_params();
+        let a = heston_paths_with_scheme(&params, 42, HestonScheme::QE);
+        let b = heston_paths_with_scheme(&params, 42, HestonScheme::QE);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_qe_positive_prices() {
+        let paths = heston_paths_with_scheme(&default_params(), 42, HestonScheme::QE);
+        assert!(paths.iter().all(|&v| v > 0.0));
+    }
+
+    #[test]
+    fn test_qe_expected_terminal_price() {
+        let params = HestonParams {
+            n_paths: 100_000,
+            ..default_params()
+        };
+        let paths = heston_paths_with_scheme(&params, 0, HestonScheme::QE);
+        let mean_terminal = paths.column(params.steps).mean().unwrap();
+        let expected = params.s0 * (params.mu * params.t).exp();
+        let rel_err = (mean_terminal - expected).abs() / expected;
+        assert!(rel_err < 0.02, "QE rel_err={:.4}", rel_err);
+    }
+
+    #[test]
+    fn test_qe_feller_violated_stability() {
+        let params = HestonParams {
+            kappa: 1.0,
+            theta: 0.04,
+            xi: 0.3,
+            n_paths: 5_000,
+            ..default_params()
+        };
+        let paths = heston_paths_with_scheme(&params, 77, HestonScheme::QE);
+        assert_eq!(paths.shape(), &[5_000, 253]);
+        assert!(paths.iter().all(|&v| v > 0.0));
     }
 }
