@@ -191,7 +191,10 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v1.0** ✅ | Ziggurat sampler (~3× faster normal sampling) |
 | **v1.1** ✅ | SABR calibration (`sabr_calibrate`) |
 | **v1.2** ✅ | Full RNG state serialization, Heston QE scheme |
-| **v1.3** | DLPack zero-copy, Heston calibration utilities |
+| **v1.3** | Multi-asset correlated simulation |
+| **v1.4** | Greeks (bump-and-revalue finite difference) |
+| **v1.5** | Heston calibration (characteristic function + FFT/COS) |
+| **v1.6** | DLPack zero-copy tensor interop |
 
 ## License
 
