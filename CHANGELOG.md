@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-29
+
+### Added
+
+- **`multi_gbm`**: Simulate correlated multi-asset GBM paths. Uses Cholesky
+  decomposition of the correlation matrix to generate correlated Brownian
+  increments, then applies the log-Euler scheme independently to each asset.
+  Returns a 3-D array of shape `(n_paths, steps + 1, n_assets)` optimized for
+  portfolio-level analytics (VaR, time-series aggregation). Supports antithetic
+  variates for variance reduction. Rayon-parallel over paths with block-split
+  RNG streams for full reproducibility.
+- `examples/08_multi_asset.py` (and `.ja.py`): multi-asset correlated
+  simulation tutorial — portfolio VaR, correlation verification, antithetic
+  variates comparison.
+
 ## [1.2.0] - 2026-04-28
 
 ### Changed
@@ -172,7 +187,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `standard_normal(10M samples)` | ~155M samples/sec |
 | `gbm(n_paths=100k, steps=252)` | ~680k paths/sec |
 
-[Unreleased]: https://github.com/heki1224/stocha/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/heki1224/stocha/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/heki1224/stocha/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/heki1224/stocha/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/heki1224/stocha/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/heki1224/stocha/compare/v0.3.3...v1.0.0

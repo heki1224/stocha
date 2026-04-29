@@ -11,7 +11,7 @@
 
 - **Fast PRNG**: PCG64DXSM (NumPy default algorithm)
 - **Quasi-random sequences**: Sobol (Joe & Kuo 2008) and Halton sequences
-- **Stochastic models**: GBM, Heston, Merton Jump-Diffusion, Hull-White
+- **Stochastic models**: GBM, multi-asset correlated GBM, Heston, Merton Jump-Diffusion, Hull-White
 - **Risk metrics**: VaR and CVaR (Expected Shortfall)
 - **Copulas**: Gaussian and Student-t copulas for multivariate dependence
 - **Volatility**: SABR implied volatility (Hagan 2002) with negative-rate support
@@ -56,6 +56,18 @@ paths = stocha.gbm(
     t=1.0, steps=252, n_paths=100_000, seed=42,
 )
 # paths.shape == (100_000, 253)
+
+# ── Multi-asset correlated GBM ────────────────────────────────────────────
+corr = np.array([[1.0, 0.6, 0.3],
+                 [0.6, 1.0, 0.5],
+                 [0.3, 0.5, 1.0]])
+multi_paths = stocha.multi_gbm(
+    s0=[100.0, 50.0, 200.0], mu=[0.05, 0.08, 0.03],
+    sigma=[0.2, 0.3, 0.15], corr=corr,
+    t=1.0, steps=252, n_paths=10_000, seed=42,
+)
+# multi_paths.shape == (10_000, 253, 3)
+# Portfolio terminal value: (multi_paths[:, -1, :] * weights).sum(axis=1)
 
 # ── Quasi-random sequences (low-discrepancy) ─────────────────────────────
 pts = stocha.sobol(dim=2, n_samples=1024)    # (1024, 2), values in [0, 1)
@@ -138,6 +150,7 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 | Function | Description |
 |---|---|
 | `gbm(s0, mu, sigma, t, steps, n_paths, ...)` | Geometric Brownian Motion (Euler-Maruyama, Rayon-parallel) |
+| `multi_gbm(s0, mu, sigma, corr, t, steps, n_paths, ...)` | Correlated multi-asset GBM (Cholesky decomposition); returns `(n_paths, steps+1, n_assets)` |
 | `heston(s0, v0, mu, kappa, theta, xi, rho, ..., scheme)` | Heston stochastic volatility (`"euler"` Full Truncation or `"qe"` Andersen QE) |
 | `merton_jump_diffusion(s0, mu, sigma, lambda_, ...)` | Merton Jump-Diffusion with lognormal jumps |
 | `hull_white(r0, a, theta, sigma, t, steps, n_paths)` | Hull-White 1-factor short rate (Exact Simulation) |
@@ -172,6 +185,7 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 | `examples/05_risk_copula.py` | VaR/CVaR, Gaussian/Student-t copula tail dependence |
 | `examples/06_interest_rate.py` | Hull-White short-rate model, SABR volatility smile |
 | `examples/07_american_option.py` | LSMC American option pricing, early exercise premium |
+| `examples/08_multi_asset.py` | Multi-asset correlated GBM, portfolio VaR, correlation verification |
 
 Each example has a Japanese counterpart (`*.ja.py`).
 
@@ -191,7 +205,7 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v1.0** ✅ | Ziggurat sampler (~3× faster normal sampling) |
 | **v1.1** ✅ | SABR calibration (`sabr_calibrate`) |
 | **v1.2** ✅ | Full RNG state serialization, Heston QE scheme |
-| **v1.3** | Multi-asset correlated simulation |
+| **v1.3** ✅ | Multi-asset correlated simulation |
 | **v1.4** | Greeks (bump-and-revalue finite difference) |
 | **v1.5** | Heston calibration (characteristic function + FFT/COS) |
 | **v1.6** | DLPack zero-copy tensor interop |

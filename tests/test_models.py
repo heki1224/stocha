@@ -399,6 +399,134 @@ class TestSabrCalibrate:
 # LSMC American Option
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Multi-Asset GBM
+# ---------------------------------------------------------------------------
+
+class TestMultiGBM:
+    def _corr2(self):
+        return np.array([[1.0, 0.6], [0.6, 1.0]])
+
+    def _corr3(self):
+        return np.array([[1.0, 0.6, 0.3], [0.6, 1.0, 0.5], [0.3, 0.5, 1.0]])
+
+    def test_output_shape(self):
+        paths = stocha.multi_gbm(
+            s0=[100.0, 50.0], mu=[0.05, 0.08], sigma=[0.2, 0.3],
+            corr=self._corr2(), t=1.0, steps=252, n_paths=1000, seed=42,
+        )
+        assert paths.shape == (1000, 253, 2)
+        assert paths.dtype == np.float64
+
+    def test_three_assets(self):
+        paths = stocha.multi_gbm(
+            s0=[100.0, 50.0, 200.0], mu=[0.05, 0.08, 0.03],
+            sigma=[0.2, 0.3, 0.15], corr=self._corr3(),
+            t=1.0, steps=252, n_paths=500, seed=0,
+        )
+        assert paths.shape == (500, 253, 3)
+
+    def test_initial_prices(self):
+        s0 = [100.0, 50.0, 200.0]
+        paths = stocha.multi_gbm(
+            s0=s0, mu=[0.05, 0.08, 0.03], sigma=[0.2, 0.3, 0.15],
+            corr=self._corr3(), t=1.0, steps=10, n_paths=100, seed=0,
+        )
+        for i, s in enumerate(s0):
+            np.testing.assert_array_equal(paths[:, 0, i], s)
+
+    def test_positive_prices(self):
+        paths = stocha.multi_gbm(
+            s0=[100.0, 50.0], mu=[0.05, 0.08], sigma=[0.2, 0.3],
+            corr=self._corr2(), t=1.0, steps=252, n_paths=10_000, seed=0,
+        )
+        assert (paths > 0).all()
+
+    def test_reproducibility(self):
+        kw = dict(s0=[100.0, 50.0], mu=[0.05, 0.08], sigma=[0.2, 0.3],
+                  corr=self._corr2(), t=1.0, steps=252, n_paths=1000, seed=42)
+        np.testing.assert_array_equal(stocha.multi_gbm(**kw), stocha.multi_gbm(**kw))
+
+    def test_expected_terminal_prices(self):
+        s0 = [100.0, 50.0]
+        mu = [0.05, 0.08]
+        paths = stocha.multi_gbm(
+            s0=s0, mu=mu, sigma=[0.2, 0.3],
+            corr=self._corr2(), t=1.0, steps=252, n_paths=100_000, seed=0,
+        )
+        for i in range(2):
+            mean_terminal = paths[:, -1, i].mean()
+            expected = s0[i] * math.exp(mu[i])
+            rel_err = abs(mean_terminal - expected) / expected
+            assert rel_err < 0.02, f"asset {i}: rel_err={rel_err:.4f}"
+
+    def test_correlation_structure(self):
+        paths = stocha.multi_gbm(
+            s0=[100.0, 50.0], mu=[0.05, 0.08], sigma=[0.2, 0.3],
+            corr=self._corr2(), t=1.0, steps=252, n_paths=50_000, seed=0,
+        )
+        # Log-returns across all steps
+        log_ret = np.log(paths[:, 1:, :] / paths[:, :-1, :])
+        # Flatten to (n_paths * steps, n_assets) for correlation estimation
+        flat = log_ret.reshape(-1, 2)
+        sample_corr = np.corrcoef(flat.T)[0, 1]
+        assert abs(sample_corr - 0.6) < 0.05, f"sample_corr={sample_corr:.4f}"
+
+    def test_antithetic_shape(self):
+        paths = stocha.multi_gbm(
+            s0=[100.0, 50.0], mu=[0.05, 0.08], sigma=[0.2, 0.3],
+            corr=self._corr2(), t=1.0, steps=252, n_paths=1000,
+            seed=42, antithetic=True,
+        )
+        assert paths.shape == (1000, 253, 2)
+
+    def test_antithetic_reduces_variance(self):
+        kw = dict(s0=[100.0, 50.0], mu=[0.05, 0.08], sigma=[0.2, 0.3],
+                  corr=self._corr2(), t=1.0, steps=252, n_paths=50_000, seed=42)
+        plain = stocha.multi_gbm(**kw, antithetic=False)
+        anti = stocha.multi_gbm(**kw, antithetic=True)
+        # Portfolio value: equal weight
+        plain_port = plain[:, -1, :].sum(axis=1)
+        anti_port = anti[:, -1, :].sum(axis=1)
+        assert anti_port.std() < plain_port.std()
+
+    def test_uncorrelated_assets(self):
+        corr = np.eye(2)
+        paths = stocha.multi_gbm(
+            s0=[100.0, 100.0], mu=[0.05, 0.05], sigma=[0.2, 0.2],
+            corr=corr, t=1.0, steps=252, n_paths=50_000, seed=0,
+        )
+        log_ret = np.log(paths[:, 1:, :] / paths[:, :-1, :])
+        flat = log_ret.reshape(-1, 2)
+        sample_corr = np.corrcoef(flat.T)[0, 1]
+        assert abs(sample_corr) < 0.02, f"sample_corr={sample_corr:.4f}"
+
+    def test_invalid_length_mismatch(self):
+        with pytest.raises((ValueError, Exception)):
+            stocha.multi_gbm(s0=[100.0], mu=[0.05, 0.08], sigma=[0.2],
+                              corr=np.eye(1), t=1.0, steps=10, n_paths=10)
+
+    def test_invalid_s0_negative(self):
+        with pytest.raises((ValueError, Exception)):
+            stocha.multi_gbm(s0=[-1.0, 50.0], mu=[0.05, 0.08], sigma=[0.2, 0.3],
+                              corr=self._corr2(), t=1.0, steps=10, n_paths=10)
+
+    def test_invalid_corr_not_pd(self):
+        bad_corr = np.array([[1.0, 1.5], [1.5, 1.0]])
+        with pytest.raises((ValueError, Exception)):
+            stocha.multi_gbm(s0=[100.0, 50.0], mu=[0.05, 0.08], sigma=[0.2, 0.3],
+                              corr=bad_corr, t=1.0, steps=10, n_paths=10)
+
+    def test_invalid_corr_shape(self):
+        with pytest.raises((ValueError, Exception)):
+            stocha.multi_gbm(s0=[100.0, 50.0], mu=[0.05, 0.08], sigma=[0.2, 0.3],
+                              corr=np.eye(3), t=1.0, steps=10, n_paths=10)
+
+
+# ---------------------------------------------------------------------------
+# LSMC American Option
+# ---------------------------------------------------------------------------
+
 class TestLsmcAmericanOption:
     def test_shape(self):
         price, std_err = stocha.lsmc_american_option(

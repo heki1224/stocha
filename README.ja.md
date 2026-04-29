@@ -11,7 +11,7 @@
 
 - **高速 PRNG**: PCG64DXSM（NumPy デフォルト実装）
 - **準乱数列**: Sobol（Joe & Kuo 2008）・Halton 列
-- **確率過程モデル**: GBM、Heston、Merton Jump-Diffusion、Hull-White
+- **確率過程モデル**: GBM、マルチアセット相関 GBM、Heston、Merton Jump-Diffusion、Hull-White
 - **リスク指標**: VaR・CVaR（Expected Shortfall）
 - **コピュラ**: ガウスコピュラ・Student-t コピュラ（多変量依存構造モデリング）
 - **ボラティリティ**: SABR インプライドボラティリティ（Hagan 2002、マイナス金利対応）
@@ -56,6 +56,18 @@ paths = stocha.gbm(
     t=1.0, steps=252, n_paths=100_000, seed=42,
 )
 # paths.shape == (100_000, 253)
+
+# ── マルチアセット相関 GBM ────────────────────────────────────────────────
+corr = np.array([[1.0, 0.6, 0.3],
+                 [0.6, 1.0, 0.5],
+                 [0.3, 0.5, 1.0]])
+multi_paths = stocha.multi_gbm(
+    s0=[100.0, 50.0, 200.0], mu=[0.05, 0.08, 0.03],
+    sigma=[0.2, 0.3, 0.15], corr=corr,
+    t=1.0, steps=252, n_paths=10_000, seed=42,
+)
+# multi_paths.shape == (10_000, 253, 3)
+# ポートフォリオ終端価値: (multi_paths[:, -1, :] * weights).sum(axis=1)
 
 # ── 準乱数列（低差異列） ──────────────────────────────────────────────────
 pts = stocha.sobol(dim=2, n_samples=1024)    # (1024, 2), 値域 [0, 1)
@@ -138,6 +150,7 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | 関数 | 説明 |
 |---|---|
 | `gbm(s0, mu, sigma, t, steps, n_paths, ...)` | 幾何ブラウン運動（Euler-Maruyama、Rayon 並列） |
+| `multi_gbm(s0, mu, sigma, corr, t, steps, n_paths, ...)` | マルチアセット相関 GBM（Cholesky 分解）; 戻り値 `(n_paths, steps+1, n_assets)` |
 | `heston(s0, v0, mu, kappa, theta, xi, rho, ..., scheme)` | Heston ストキャスティックボラティリティ（`"euler"` Full Truncation / `"qe"` Andersen QE） |
 | `merton_jump_diffusion(s0, mu, sigma, lambda_, ...)` | Merton ジャンプ拡散（対数正規ジャンプ） |
 | `hull_white(r0, a, theta, sigma, t, steps, n_paths)` | Hull-White 1因子短期金利（Exact Simulation） |
@@ -172,6 +185,7 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | `examples/05_risk_copula.ja.py` | VaR/CVaR・ガウス/Student-t コピュラのテール依存比較 |
 | `examples/06_interest_rate.ja.py` | Hull-White 金利モデル・SABR ボラティリティスマイル |
 | `examples/07_american_option.ja.py` | LSMC アメリカンオプション・早期行使プレミアム |
+| `examples/08_multi_asset.ja.py` | マルチアセット相関 GBM・ポートフォリオ VaR・相関検証 |
 
 ## 対象ユーザー
 
@@ -189,7 +203,7 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | **v1.0** ✅ | Ziggurat サンプラー（正規分布サンプリング約 3 倍高速化） |
 | **v1.1** ✅ | SABR キャリブレーション（`sabr_calibrate`） |
 | **v1.2** ✅ | 完全 RNG 状態シリアライズ、Heston QE スキーム |
-| **v1.3** | マルチアセット相関シミュレーション |
+| **v1.3** ✅ | マルチアセット相関シミュレーション |
 | **v1.4** | グリークス（バンピング有限差分） |
 | **v1.5** | Heston キャリブレーション（特性関数 + FFT/COS法） |
 | **v1.6** | DLPack ゼロコピーテンソル連携 |

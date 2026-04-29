@@ -29,6 +29,7 @@ from stocha._stocha import student_t_copula as _student_t_copula
 from stocha._stocha import hull_white as _hull_white
 from stocha._stocha import sabr_implied_vol as _sabr_implied_vol
 from stocha._stocha import sabr_calibrate as _sabr_calibrate
+from stocha._stocha import multi_gbm as _multi_gbm
 from stocha._stocha import lsmc_american_option as _lsmc_american_option
 from stocha._stocha import __version__
 
@@ -45,6 +46,7 @@ __all__ = [
     "hull_white",
     "sabr_implied_vol",
     "sabr_calibrate",
+    "multi_gbm",
     "lsmc_american_option",
     "__version__",
 ]
@@ -542,6 +544,62 @@ def sabr_calibrate(
         np.asarray(market_vols, dtype=np.float64),
         f=f, t=t, beta=beta, shift=shift,
         max_iter=max_iter, tol=tol,
+    )
+
+
+def multi_gbm(
+    s0: list[float],
+    mu: list[float],
+    sigma: list[float],
+    corr: np.ndarray,
+    t: float,
+    steps: int,
+    n_paths: int,
+    seed: int = 42,
+    antithetic: bool = False,
+) -> np.ndarray:
+    """Simulate correlated multi-asset GBM paths.
+
+    Uses Cholesky decomposition of the correlation matrix to generate
+    correlated Brownian increments, then applies the log-Euler scheme
+    independently to each asset.
+
+    Args:
+        s0:         List of initial asset prices (all must be > 0).
+        mu:         List of drift rates (annualized), one per asset.
+        sigma:      List of volatilities (annualized, all must be > 0).
+        corr:       Correlation matrix of shape ``(n_assets, n_assets)``.
+                    Must be symmetric and positive definite.
+        t:          Time to maturity in years (must be > 0).
+        steps:      Number of time steps (e.g. 252 for daily, 1-year).
+        n_paths:    Number of simulation paths.
+        seed:       Random seed (default ``42``).
+        antithetic: Use antithetic variates for variance reduction (default ``False``).
+
+    Returns:
+        NumPy array of shape ``(n_paths, steps + 1, n_assets)``.
+        ``result[:, 0, :]`` contains the initial prices.
+        ``result[:, -1, :]`` contains the terminal prices.
+
+    Example:
+        >>> import numpy as np
+        >>> corr = np.array([[1.0, 0.6], [0.6, 1.0]])
+        >>> paths = multi_gbm(s0=[100.0, 50.0], mu=[0.05, 0.08],
+        ...                   sigma=[0.2, 0.3], corr=corr,
+        ...                   t=1.0, steps=252, n_paths=10000)
+        >>> paths.shape
+        (10000, 253, 2)
+    """
+    return _multi_gbm(
+        s0=list(s0),
+        mu=list(mu),
+        sigma=list(sigma),
+        corr=np.asarray(corr, dtype=np.float64),
+        t=t,
+        steps=steps,
+        n_paths=n_paths,
+        seed=seed,
+        antithetic=antithetic,
     )
 
 

@@ -12,11 +12,12 @@ use finance::heston::{heston_paths_with_scheme, HestonParams, HestonScheme};
 use finance::hull_white::{hull_white_paths, HullWhiteParams};
 use finance::jump_diffusion::{merton_paths, MertonParams};
 use finance::lsmc::{lsmc_american_option as lsmc_price, LsmcParams};
+use finance::multi_gbm::{multi_gbm_paths, MultiGbmParams};
 use finance::sabr::sabr_implied_vol as sabr_vol;
 use finance::sabr_calibration::calibrate as sabr_calibrate_core;
 use qrng::{halton_sequence, sobol_sequence};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
-use ndarray::Array2;
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
+use ndarray::{Array2, Array3};
 use prng::Pcg64Dxsm;
 use risk::var_cvar as compute_var_cvar;
 use pyo3::prelude::*;
@@ -27,6 +28,14 @@ fn into_py_array2<'py>(arr: Array2<f64>, py: Python<'py>) -> PyResult<Bound<'py,
     let shape = [arr.shape()[0], arr.shape()[1]];
     let flat: Vec<f64> = arr.into_raw_vec_and_offset().0;
     let out = Array2::from_shape_vec(shape, flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    Ok(out.into_pyarray(py))
+}
+
+fn into_py_array3<'py>(arr: Array3<f64>, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+    let shape = [arr.shape()[0], arr.shape()[1], arr.shape()[2]];
+    let flat: Vec<f64> = arr.into_raw_vec_and_offset().0;
+    let out = Array3::from_shape_vec(shape, flat)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
     Ok(out.into_pyarray(py))
 }
@@ -643,6 +652,78 @@ fn sabr_calibrate<'py>(
     Ok(dict)
 }
 
+/// Simulate correlated multi-asset GBM paths.
+///
+/// Uses Cholesky decomposition of the correlation matrix to generate
+/// correlated Brownian increments across assets.
+///
+/// Args:
+///     s0:         List of initial asset prices (all must be > 0).
+///     mu:         List of drift rates (annualized), one per asset.
+///     sigma:      List of volatilities (annualized, all must be > 0).
+///     corr:       2-D correlation matrix of shape ``(n_assets, n_assets)``.
+///     t:          Time to maturity in years (must be > 0).
+///     steps:      Number of time steps.
+///     n_paths:    Number of simulation paths.
+///     seed:       Random seed (default ``42``).
+///     antithetic: Use antithetic variates (default ``False``).
+///
+/// Returns:
+///     NumPy array of shape ``(n_paths, steps + 1, n_assets)``.
+#[pyfunction]
+#[pyo3(signature = (s0, mu, sigma, corr, t, steps, n_paths, seed=42, antithetic=false))]
+fn multi_gbm<'py>(
+    py: Python<'py>,
+    s0: Vec<f64>,
+    mu: Vec<f64>,
+    sigma: Vec<f64>,
+    corr: PyReadonlyArray2<'py, f64>,
+    t: f64,
+    steps: usize,
+    n_paths: usize,
+    seed: u64,
+    antithetic: bool,
+) -> PyResult<Bound<'py, PyArray3<f64>>> {
+    let n = s0.len();
+    if n == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("s0 must not be empty"));
+    }
+    if mu.len() != n || sigma.len() != n {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "s0, mu, sigma must have the same length",
+        ));
+    }
+    if s0.iter().any(|&v| v <= 0.0) {
+        return Err(pyo3::exceptions::PyValueError::new_err("all s0 must be positive"));
+    }
+    if sigma.iter().any(|&v| v <= 0.0) {
+        return Err(pyo3::exceptions::PyValueError::new_err("all sigma must be positive"));
+    }
+    if t <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+    }
+    if steps == 0 || n_paths == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "steps and n_paths must be positive",
+        ));
+    }
+    let corr_shape = corr.shape();
+    if corr_shape[0] != n || corr_shape[1] != n {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "corr must be ({}, {}), got ({}, {})", n, n, corr_shape[0], corr_shape[1]
+        )));
+    }
+
+    let corr_owned = corr.as_array().to_owned();
+    let params = MultiGbmParams {
+        s0, mu, sigma, corr: corr_owned, t, steps, n_paths, antithetic,
+    };
+    let result = py
+        .detach(|| multi_gbm_paths(&params, seed as u128))
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+    into_py_array3(result, py)
+}
+
 /// Price an American option via Longstaff-Schwartz Monte Carlo (LSMC).
 ///
 /// Simulates GBM paths under the risk-neutral measure, then uses backward
@@ -731,7 +812,8 @@ fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hull_white, m)?)?;
     m.add_function(wrap_pyfunction!(sabr_implied_vol, m)?)?;
     m.add_function(wrap_pyfunction!(sabr_calibrate, m)?)?;
+    m.add_function(wrap_pyfunction!(multi_gbm, m)?)?;
     m.add_function(wrap_pyfunction!(lsmc_american_option, m)?)?;
-    m.add("__version__", "1.1.0")?;
+    m.add("__version__", "1.3.0")?;
     Ok(())
 }
