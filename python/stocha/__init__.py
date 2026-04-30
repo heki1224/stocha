@@ -31,6 +31,8 @@ from stocha._stocha import sabr_implied_vol as _sabr_implied_vol
 from stocha._stocha import sabr_calibrate as _sabr_calibrate
 from stocha._stocha import multi_gbm as _multi_gbm
 from stocha._stocha import lsmc_american_option as _lsmc_american_option
+from stocha._stocha import greeks_fd as _greeks_fd
+from stocha._stocha import greeks_pathwise as _greeks_pathwise
 from stocha._stocha import __version__
 
 __all__ = [
@@ -48,6 +50,8 @@ __all__ = [
     "sabr_calibrate",
     "multi_gbm",
     "lsmc_american_option",
+    "greeks_fd",
+    "greeks_pathwise",
     "__version__",
 ]
 
@@ -644,4 +648,102 @@ def lsmc_american_option(
     return _lsmc_american_option(
         s0=s0, k=k, r=r, sigma=sigma, t=t, steps=steps,
         n_paths=n_paths, is_put=is_put, poly_degree=poly_degree, seed=seed,
+    )
+
+
+def greeks_fd(
+    model: str,
+    params: dict,
+    payoff: "str | Callable",
+    strike: float,
+    n_paths: int,
+    n_steps: int,
+    greeks: list[str],
+    seed: int = 42,
+    bump_size: float = 0.01,
+) -> dict[str, float]:
+    """Compute Monte Carlo Greeks via bump-and-revalue (finite difference).
+
+    All bump scenarios use the same random seed (Common Random Numbers)
+    for variance reduction.
+
+    Args:
+        model:     Model name: ``"gbm"``, ``"heston"``, or ``"merton"``.
+        params:    Dict of model parameters.
+
+                   - GBM: ``s0, r, sigma, t``
+                   - Heston: ``s0, v0, r, kappa, theta, xi, rho, t``
+                   - Merton: ``s0, r, sigma, lambda_, mu_j, sigma_j, t``
+        payoff:    ``"call"``, ``"put"``, or a callable ``f(terminals) -> values``
+                   where ``terminals`` is a 1-D NumPy array of terminal prices.
+        strike:    Strike price (used by built-in payoffs).
+        n_paths:   Number of simulation paths.
+        n_steps:   Number of time steps.
+        greeks:    List of Greeks: ``"delta"``, ``"gamma"``, ``"vega"``,
+                   ``"theta"``, ``"rho"``.
+        seed:      Random seed (default ``42``).
+        bump_size: Relative bump size (default ``0.01`` = 1%).
+
+    Returns:
+        Dict mapping Greek names to float values.
+
+    Example:
+        >>> r = greeks_fd(
+        ...     model="gbm",
+        ...     params={"s0": 100, "r": 0.05, "sigma": 0.2, "t": 1.0},
+        ...     payoff="call", strike=100.0,
+        ...     n_paths=100_000, n_steps=252,
+        ...     greeks=["delta", "vega"])
+    """
+    return _greeks_fd(
+        model=model, params=params, payoff=payoff, strike=strike,
+        n_paths=n_paths, n_steps=n_steps, greeks=greeks,
+        seed=seed, bump_size=bump_size,
+    )
+
+
+def greeks_pathwise(
+    s0: float,
+    r: float,
+    sigma: float,
+    t: float,
+    strike: float,
+    is_call: bool,
+    n_paths: int,
+    n_steps: int,
+    greeks: list[str],
+    seed: int = 42,
+) -> dict[str, float]:
+    """Compute Monte Carlo Greeks via pathwise (IPA) method (GBM only).
+
+    More accurate than bump-and-revalue for continuous payoffs (European
+    call/put). Only requires a single simulation run.
+
+    Args:
+        s0:      Initial asset price (must be > 0).
+        r:       Risk-free rate (annualized).
+        sigma:   Volatility (annualized, must be > 0).
+        t:       Time to maturity in years (must be > 0).
+        strike:  Strike price.
+        is_call: ``True`` for call, ``False`` for put.
+        n_paths: Number of simulation paths.
+        n_steps: Number of time steps.
+        greeks:  List of Greeks: ``"delta"`` and/or ``"vega"``.
+        seed:    Random seed (default ``42``).
+
+    Returns:
+        Dict mapping Greek names to float values.
+
+    Example:
+        >>> r = greeks_pathwise(
+        ...     s0=100.0, r=0.05, sigma=0.2, t=1.0,
+        ...     strike=100.0, is_call=True,
+        ...     n_paths=100_000, n_steps=252,
+        ...     greeks=["delta", "vega"])
+    """
+    return _greeks_pathwise(
+        s0=s0, r=r, sigma=sigma, t=t,
+        strike=strike, is_call=is_call,
+        n_paths=n_paths, n_steps=n_steps,
+        greeks=greeks, seed=seed,
     )

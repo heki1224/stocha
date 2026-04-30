@@ -1,4 +1,5 @@
 pub mod gbm;
+pub mod greeks;
 pub mod heston;
 pub mod hull_white;
 pub mod jump_diffusion;

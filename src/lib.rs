@@ -8,6 +8,10 @@ mod risk;
 use copula::{gaussian_copula_samples, student_t_copula_samples};
 use dist::NormalSampler;
 use finance::gbm::{gbm_paths, GbmParams};
+use finance::greeks::{
+    compute_bump, compute_greeks_from_prices, greeks_fd_core, greeks_pathwise_core,
+    required_scenarios, BumpDir, Greek, ModelSpec, Payoff, ScenarioKey,
+};
 use finance::heston::{heston_paths_with_scheme, HestonParams, HestonScheme};
 use finance::hull_white::{hull_white_paths, HullWhiteParams};
 use finance::jump_diffusion::{merton_paths, MertonParams};
@@ -21,7 +25,8 @@ use ndarray::{Array2, Array3};
 use prng::Pcg64Dxsm;
 use risk::var_cvar as compute_var_cvar;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
+use std::collections::HashMap;
 
 /// Convert an owned `Array2<f64>` into a Python NumPy array.
 fn into_py_array2<'py>(arr: Array2<f64>, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
@@ -797,6 +802,313 @@ fn lsmc_american_option<'py>(
     Ok((price, std_err))
 }
 
+fn parse_greeks(greeks: &Bound<'_, PyList>) -> PyResult<Vec<Greek>> {
+    greeks
+        .iter()
+        .map(|item| {
+            let s: String = item.extract()?;
+            match s.as_str() {
+                "delta" => Ok(Greek::Delta),
+                "gamma" => Ok(Greek::Gamma),
+                "vega" => Ok(Greek::Vega),
+                "theta" => Ok(Greek::Theta),
+                "rho" => Ok(Greek::Rho),
+                other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown greek: '{}'. Supported: delta, gamma, vega, theta, rho",
+                    other
+                ))),
+            }
+        })
+        .collect()
+}
+
+fn greek_name(g: Greek) -> &'static str {
+    match g {
+        Greek::Delta => "delta",
+        Greek::Gamma => "gamma",
+        Greek::Vega => "vega",
+        Greek::Theta => "theta",
+        Greek::Rho => "rho",
+    }
+}
+
+fn extract_f64(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<f64> {
+    dict.get_item(key)?
+        .ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(format!("Missing required param: '{}'", key))
+        })?
+        .extract::<f64>()
+}
+
+fn build_model_spec(
+    model: &str,
+    params: &Bound<'_, PyDict>,
+    n_paths: usize,
+    n_steps: usize,
+) -> PyResult<ModelSpec> {
+    match model {
+        "gbm" => {
+            let s0 = extract_f64(params, "s0")?;
+            let r = extract_f64(params, "r")?;
+            let sigma = extract_f64(params, "sigma")?;
+            let t = extract_f64(params, "t")?;
+            Ok(ModelSpec::Gbm {
+                s0,
+                mu: r,
+                sigma,
+                t,
+                steps: n_steps,
+                n_paths,
+            })
+        }
+        "heston" => {
+            let s0 = extract_f64(params, "s0")?;
+            let v0 = extract_f64(params, "v0")?;
+            let r = extract_f64(params, "r")?;
+            let kappa = extract_f64(params, "kappa")?;
+            let theta = extract_f64(params, "theta")?;
+            let xi = extract_f64(params, "xi")?;
+            let rho = extract_f64(params, "rho")?;
+            let t = extract_f64(params, "t")?;
+            let scheme_str: String = params
+                .get_item("scheme")?
+                .map(|v| v.extract())
+                .unwrap_or(Ok("euler".to_string()))?;
+            let scheme = match scheme_str.as_str() {
+                "euler" => HestonScheme::Euler,
+                "qe" => HestonScheme::QE,
+                _ => {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "scheme must be 'euler' or 'qe'",
+                    ))
+                }
+            };
+            Ok(ModelSpec::Heston {
+                s0,
+                v0,
+                mu: r,
+                kappa,
+                theta,
+                xi,
+                rho,
+                t,
+                steps: n_steps,
+                n_paths,
+                scheme,
+            })
+        }
+        "merton" => {
+            let s0 = extract_f64(params, "s0")?;
+            let r = extract_f64(params, "r")?;
+            let sigma = extract_f64(params, "sigma")?;
+            let lambda = extract_f64(params, "lambda_")?;
+            let mu_j = extract_f64(params, "mu_j")?;
+            let sigma_j = extract_f64(params, "sigma_j")?;
+            let t = extract_f64(params, "t")?;
+            Ok(ModelSpec::Merton {
+                s0,
+                mu: r,
+                sigma,
+                lambda,
+                mu_j,
+                sigma_j,
+                t,
+                steps: n_steps,
+                n_paths,
+            })
+        }
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "Unknown model: '{}'. Supported: gbm, heston, merton",
+            other
+        ))),
+    }
+}
+
+/// Compute Monte Carlo Greeks via bump-and-revalue (finite difference).
+///
+/// Supports built-in payoffs ("call" / "put") and custom Python callables.
+/// All bump scenarios use the same random seed (CRN) for variance reduction.
+///
+/// Args:
+///     model:     Model name: ``"gbm"``, ``"heston"``, or ``"merton"``.
+///     params:    Dict of model parameters. GBM: ``s0, r, sigma, t``.
+///                Heston: ``s0, v0, r, kappa, theta, xi, rho, t``.
+///                Merton: ``s0, r, sigma, lambda_, mu_j, sigma_j, t``.
+///     payoff:    ``"call"``, ``"put"``, or a Python callable ``f(terminals) -> values``.
+///     strike:    Strike price (required for built-in payoffs, ignored for callable).
+///     n_paths:   Number of simulation paths.
+///     n_steps:   Number of time steps.
+///     greeks:    List of Greeks to compute: ``"delta"``, ``"gamma"``, ``"vega"``,
+///                ``"theta"``, ``"rho"``.
+///     seed:      Random seed (default ``42``).
+///     bump_size: Relative bump size (default ``0.01`` = 1%). Absolute bump is
+///                ``max(1e-8, |param| * bump_size)``.
+///
+/// Returns:
+///     Dict mapping Greek names to float values.
+#[pyfunction]
+#[pyo3(signature = (model, params, payoff, strike, n_paths, n_steps, greeks, seed=42, bump_size=0.01))]
+fn greeks_fd<'py>(
+    py: Python<'py>,
+    model: &str,
+    params: &Bound<'py, PyDict>,
+    payoff: Py<PyAny>,
+    strike: f64,
+    n_paths: usize,
+    n_steps: usize,
+    greeks: &Bound<'py, PyList>,
+    seed: u64,
+    bump_size: f64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let greek_list = parse_greeks(greeks)?;
+    let model_spec = build_model_spec(model, params, n_paths, n_steps)?;
+
+    if let Ok(payoff_str) = payoff.extract::<String>(py) {
+        let payoff_enum = match payoff_str.as_str() {
+            "call" => Payoff::Call { strike },
+            "put" => Payoff::Put { strike },
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown payoff: '{}'. Supported: 'call', 'put', or a callable",
+                    other
+                )))
+            }
+        };
+        let results =
+            py.detach(|| greeks_fd_core(&model_spec, &payoff_enum, &greek_list, bump_size, seed as u128));
+        let dict = PyDict::new(py);
+        for (g, v) in results {
+            dict.set_item(greek_name(g), v)?;
+        }
+        Ok(dict)
+    } else if payoff.bind(py).is_callable() {
+        let scenarios = required_scenarios(&greek_list);
+        let mut bumps = HashMap::new();
+        for &key in &scenarios {
+            if let ScenarioKey::Bumped(param, _) = key {
+                bumps
+                    .entry(param)
+                    .or_insert_with(|| compute_bump(model_spec.param_value(param), bump_size));
+            }
+        }
+
+        let mut prices = HashMap::new();
+        let seed128 = seed as u128;
+        for &key in &scenarios {
+            let m = match key {
+                ScenarioKey::Base => model_spec.clone(),
+                ScenarioKey::Bumped(param, dir) => {
+                    let h = bumps[&param];
+                    let delta = match dir {
+                        BumpDir::Up => h,
+                        BumpDir::Down => -h,
+                    };
+                    model_spec.with_bumped(param, delta)
+                }
+            };
+
+            let r_rate = m.risk_free_rate();
+            let mat = m.maturity();
+            let terminals = py.detach(|| m.terminal_prices(seed128));
+
+            let terminals_np = terminals.into_pyarray(py);
+            let payoff_result = payoff.call1(py, (terminals_np,))?;
+            let payoff_values: Vec<f64> = payoff_result.extract(py)?;
+
+            let discount = (-r_rate * mat).exp();
+            let price =
+                discount * payoff_values.iter().sum::<f64>() / payoff_values.len() as f64;
+            prices.insert(key, price);
+        }
+
+        let results = compute_greeks_from_prices(&greek_list, &prices, &bumps);
+        let dict = PyDict::new(py);
+        for (g, v) in results {
+            dict.set_item(greek_name(g), v)?;
+        }
+        Ok(dict)
+    } else {
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "payoff must be 'call', 'put', or a callable",
+        ))
+    }
+}
+
+/// Compute Monte Carlo Greeks via pathwise (IPA) method (GBM only).
+///
+/// More accurate than bump-and-revalue for continuous payoffs (European call/put).
+/// Only requires a single simulation run. Supports Delta and Vega.
+///
+/// Args:
+///     s0:      Initial asset price (must be > 0).
+///     r:       Risk-free rate (annualized).
+///     sigma:   Volatility (annualized, must be > 0).
+///     t:       Time to maturity in years (must be > 0).
+///     strike:  Strike price.
+///     is_call: ``True`` for call, ``False`` for put.
+///     n_paths: Number of simulation paths.
+///     n_steps: Number of time steps.
+///     greeks:  List of Greeks: ``"delta"`` and/or ``"vega"``.
+///     seed:    Random seed (default ``42``).
+///
+/// Returns:
+///     Dict mapping Greek names to float values.
+#[pyfunction]
+#[pyo3(signature = (s0, r, sigma, t, strike, is_call, n_paths, n_steps, greeks, seed=42))]
+fn greeks_pathwise<'py>(
+    py: Python<'py>,
+    s0: f64,
+    r: f64,
+    sigma: f64,
+    t: f64,
+    strike: f64,
+    is_call: bool,
+    n_paths: usize,
+    n_steps: usize,
+    greeks: &Bound<'py, PyList>,
+    seed: u64,
+) -> PyResult<Bound<'py, PyDict>> {
+    if s0 <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "s0 must be positive",
+        ));
+    }
+    if sigma <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "sigma must be positive",
+        ));
+    }
+    if t <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "t must be positive",
+        ));
+    }
+    if n_paths == 0 || n_steps == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_paths and n_steps must be positive",
+        ));
+    }
+
+    let greek_list = parse_greeks(greeks)?;
+    for &g in &greek_list {
+        if g != Greek::Delta && g != Greek::Vega {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Pathwise method only supports 'delta' and 'vega', got '{}'",
+                greek_name(g)
+            )));
+        }
+    }
+
+    let results = py.detach(|| {
+        greeks_pathwise_core(s0, r, sigma, t, strike, is_call, n_paths, n_steps, &greek_list, seed as u128)
+    });
+    let dict = PyDict::new(py);
+    for (g, v) in results {
+        dict.set_item(greek_name(g), v)?;
+    }
+    Ok(dict)
+}
+
 /// stocha: High-performance random number and financial simulation library.
 #[pymodule]
 fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -814,6 +1126,8 @@ fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sabr_calibrate, m)?)?;
     m.add_function(wrap_pyfunction!(multi_gbm, m)?)?;
     m.add_function(wrap_pyfunction!(lsmc_american_option, m)?)?;
-    m.add("__version__", "1.3.0")?;
+    m.add_function(wrap_pyfunction!(greeks_fd, m)?)?;
+    m.add_function(wrap_pyfunction!(greeks_pathwise, m)?)?;
+    m.add("__version__", "1.4.0")?;
     Ok(())
 }
