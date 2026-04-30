@@ -16,6 +16,7 @@
 - **Copulas**: Gaussian and Student-t copulas for multivariate dependence
 - **Volatility**: SABR implied volatility (Hagan 2002) with negative-rate support
 - **Option pricing**: Longstaff-Schwartz LSMC for American options
+- **Greeks**: Bump-and-revalue finite difference (all models) + pathwise IPA (GBM)
 - **Parallel**: Rayon-powered path generation
 - **Reproducible**: block-split RNG streams guarantee identical results across thread counts
 
@@ -128,6 +129,25 @@ price, std_err = stocha.lsmc_american_option(
     t=1.0, steps=50, n_paths=50_000,
 )
 print(f"American put: {price:.4f} ± {std_err:.4f}")
+
+# ── Monte Carlo Greeks ───────────────────────────────────────────────────
+greeks = stocha.greeks_fd(
+    model="gbm",
+    params={"s0": 100.0, "r": 0.05, "sigma": 0.2, "t": 1.0},
+    payoff="call", strike=100.0,
+    n_paths=100_000, n_steps=252,
+    greeks=["delta", "gamma", "vega", "theta", "rho"],
+)
+print(f"Delta={greeks['delta']:.4f}  Gamma={greeks['gamma']:.4f}  Vega={greeks['vega']:.2f}")
+
+# Pathwise method (GBM only, higher accuracy)
+pw = stocha.greeks_pathwise(
+    s0=100.0, r=0.05, sigma=0.2, t=1.0,
+    strike=100.0, is_call=True,
+    n_paths=100_000, n_steps=252,
+    greeks=["delta", "vega"],
+)
+print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 ```
 
 ## API Reference
@@ -165,6 +185,8 @@ print(f"American put: {price:.4f} ± {std_err:.4f}")
 | `sabr_implied_vol(f, k, t, alpha, beta, rho, nu, shift)` | SABR Black implied volatility |
 | `sabr_calibrate(strikes, market_vols, f, t, beta, shift, ...)` | Calibrate SABR `(α, ρ, ν)` to an observed IV smile (Projected Levenberg-Marquardt + 1-D ATM Brent root-find on α) |
 | `lsmc_american_option(s0, k, r, sigma, t, steps, n_paths, ...)` | American option price via Longstaff-Schwartz LSMC |
+| `greeks_fd(model, params, payoff, strike, n_paths, n_steps, greeks, ...)` | MC Greeks via bump-and-revalue finite difference (GBM/Heston/Merton) |
+| `greeks_pathwise(s0, r, sigma, t, strike, is_call, n_paths, n_steps, greeks)` | MC Greeks via pathwise IPA (GBM only; delta, vega) |
 
 ## Performance (Apple M-series, release build)
 
@@ -206,7 +228,7 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v1.1** ✅ | SABR calibration (`sabr_calibrate`) |
 | **v1.2** ✅ | Full RNG state serialization, Heston QE scheme |
 | **v1.3** ✅ | Multi-asset correlated simulation |
-| **v1.4** | Greeks (bump-and-revalue finite difference) |
+| **v1.4** ✅ | Greeks (bump-and-revalue FD + pathwise IPA) |
 | **v1.5** | Heston calibration (characteristic function + FFT/COS) |
 | **v1.6** | DLPack zero-copy tensor interop |
 

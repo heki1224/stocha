@@ -16,6 +16,7 @@
 - **コピュラ**: ガウスコピュラ・Student-t コピュラ（多変量依存構造モデリング）
 - **ボラティリティ**: SABR インプライドボラティリティ（Hagan 2002、マイナス金利対応）
 - **オプション価格付け**: Longstaff-Schwartz LSMC（アメリカンオプション）
+- **グリークス**: バンピング有限差分（全モデル） + Pathwise IPA（GBM）
 - **並列処理**: Rayon によるパス生成の並列化
 - **完全再現性**: ブロック分割 RNG ストリームによりスレッド数に依存せず同一結果を保証
 
@@ -128,6 +129,25 @@ price, std_err = stocha.lsmc_american_option(
     t=1.0, steps=50, n_paths=50_000,
 )
 print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
+
+# ── モンテカルロ・グリークス ──────────────────────────────────────────────
+greeks = stocha.greeks_fd(
+    model="gbm",
+    params={"s0": 100.0, "r": 0.05, "sigma": 0.2, "t": 1.0},
+    payoff="call", strike=100.0,
+    n_paths=100_000, n_steps=252,
+    greeks=["delta", "gamma", "vega", "theta", "rho"],
+)
+print(f"Delta={greeks['delta']:.4f}  Gamma={greeks['gamma']:.4f}  Vega={greeks['vega']:.2f}")
+
+# Pathwise 法（GBM 限定、高精度）
+pw = stocha.greeks_pathwise(
+    s0=100.0, r=0.05, sigma=0.2, t=1.0,
+    strike=100.0, is_call=True,
+    n_paths=100_000, n_steps=252,
+    greeks=["delta", "vega"],
+)
+print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 ```
 
 ## API リファレンス
@@ -165,6 +185,8 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | `sabr_implied_vol(f, k, t, alpha, beta, rho, nu, shift)` | SABR Black インプライドボラティリティ |
 | `sabr_calibrate(strikes, market_vols, f, t, beta, shift, ...)` | 観測 IV スマイルへ SABR `(α, ρ, ν)` をフィット（射影 LM ＋ ATM α の 1 次元 Brent） |
 | `lsmc_american_option(s0, k, r, sigma, t, steps, n_paths, ...)` | LSMC によるアメリカンオプション価格付け |
+| `greeks_fd(model, params, payoff, strike, n_paths, n_steps, greeks, ...)` | バンピング有限差分によるMCグリークス（GBM/Heston/Merton） |
+| `greeks_pathwise(s0, r, sigma, t, strike, is_call, n_paths, n_steps, greeks)` | Pathwise IPA によるMCグリークス（GBM 限定; delta, vega） |
 
 ## パフォーマンス（Apple M シリーズ、リリースビルド）
 
@@ -204,7 +226,7 @@ print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 | **v1.1** ✅ | SABR キャリブレーション（`sabr_calibrate`） |
 | **v1.2** ✅ | 完全 RNG 状態シリアライズ、Heston QE スキーム |
 | **v1.3** ✅ | マルチアセット相関シミュレーション |
-| **v1.4** | グリークス（バンピング有限差分） |
+| **v1.4** ✅ | グリークス（バンピング有限差分 + Pathwise IPA） |
 | **v1.5** | Heston キャリブレーション（特性関数 + FFT/COS法） |
 | **v1.6** | DLPack ゼロコピーテンソル連携 |
 

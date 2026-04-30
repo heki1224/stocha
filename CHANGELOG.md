@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-04-30
+
+### Added
+
+- **`greeks_fd`**: Compute Monte Carlo Greeks via bump-and-revalue finite
+  difference. Supports GBM, Heston, and Merton models. Computes delta, gamma,
+  vega, theta, and rho using central differences (forward difference for theta).
+  All bump scenarios share the same random seed (Common Random Numbers) for
+  variance reduction. Scenario deduplication avoids redundant simulations when
+  computing multiple Greeks. Built-in payoffs (call/put) execute entirely in
+  Rust with no GIL overhead; custom Python callables use a vectorized design
+  with a single GIL acquisition per scenario. Adaptive bump size defaults to
+  1% of parameter value.
+- **`greeks_pathwise`**: Compute Monte Carlo Greeks via pathwise (IPA) method
+  for GBM European options. Supports delta and vega. More accurate than
+  bump-and-revalue for continuous payoffs — requires only a single simulation
+  run. Uses the analytical sensitivity of the GBM terminal price with respect
+  to spot and volatility.
+
 ## [1.3.0] - 2026-04-29
 
 ### Added
@@ -187,7 +206,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `standard_normal(10M samples)` | ~155M samples/sec |
 | `gbm(n_paths=100k, steps=252)` | ~680k paths/sec |
 
-[Unreleased]: https://github.com/heki1224/stocha/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/heki1224/stocha/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/heki1224/stocha/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/heki1224/stocha/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/heki1224/stocha/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/heki1224/stocha/compare/v1.0.0...v1.1.0
