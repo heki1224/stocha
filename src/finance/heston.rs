@@ -24,6 +24,7 @@ pub enum HestonScheme {
 }
 
 /// Simulate Heston paths using the Full Truncation (FT) Euler scheme.
+#[cfg(test)]
 pub fn heston_paths(params: &HestonParams, seed: u128) -> Array2<f64> {
     heston_euler(params, seed)
 }
