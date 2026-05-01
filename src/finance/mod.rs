@@ -1,6 +1,10 @@
+pub mod bs;
 pub mod gbm;
 pub mod greeks;
 pub mod heston;
+pub mod heston_calibration;
+pub mod heston_cf;
+pub mod heston_cos;
 pub mod hull_white;
 pub mod jump_diffusion;
 pub mod lsmc;

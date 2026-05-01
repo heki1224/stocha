@@ -17,6 +17,7 @@
 - **Volatility**: SABR implied volatility (Hagan 2002) with negative-rate support
 - **Option pricing**: Longstaff-Schwartz LSMC for American options
 - **Greeks**: Bump-and-revalue finite difference (all models) + pathwise IPA (GBM)
+- **Calibration**: SABR (Projected LM) and Heston (COS method + Projected LM)
 - **Parallel**: Rayon-powered path generation
 - **Reproducible**: block-split RNG streams guarantee identical results across thread counts
 
@@ -130,6 +131,25 @@ price, std_err = stocha.lsmc_american_option(
 )
 print(f"American put: {price:.4f} ± {std_err:.4f}")
 
+# ── Heston analytical pricing (COS method) ───────────────────────────────
+prices = stocha.heston_price(
+    strikes=np.array([90.0, 100.0, 110.0]),
+    is_call=[True, True, True],
+    s0=100.0, v0=0.04, r=0.05,
+    kappa=2.0, theta=0.04, xi=0.3, rho=-0.7, t=1.0,
+)
+print(f"Heston call prices: {prices}")
+
+# ── Heston calibration ───────────────────────────────────────────────────
+fit = stocha.heston_calibrate(
+    strikes=np.array([90.0, 95.0, 100.0, 105.0, 110.0]),
+    maturities=np.array([1.0, 1.0, 1.0, 1.0, 1.0]),
+    market_prices=prices_from_market,  # your observed prices
+    is_call=[True]*5,
+    s0=100.0, r=0.05,
+)
+print(f"v0={fit['v0']:.4f}, kappa={fit['kappa']:.2f}, rho={fit['rho']:.2f}")
+
 # ── Monte Carlo Greeks ───────────────────────────────────────────────────
 greeks = stocha.greeks_fd(
     model="gbm",
@@ -187,6 +207,8 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `lsmc_american_option(s0, k, r, sigma, t, steps, n_paths, ...)` | American option price via Longstaff-Schwartz LSMC |
 | `greeks_fd(model, params, payoff, strike, n_paths, n_steps, greeks, ...)` | MC Greeks via bump-and-revalue finite difference (GBM/Heston/Merton) |
 | `greeks_pathwise(s0, r, sigma, t, strike, is_call, n_paths, n_steps, greeks)` | MC Greeks via pathwise IPA (GBM only; delta, vega) |
+| `heston_price(strikes, is_call, s0, v0, r, kappa, theta, xi, rho, t, n_cos)` | Heston analytical pricing via COS method (Fang & Oosterlee 2008) |
+| `heston_calibrate(strikes, maturities, market_prices, is_call, s0, r, ...)` | Calibrate Heston `(v0, κ, θ, ξ, ρ)` to market prices (Projected LM + Vega-weighted COS repricing) |
 
 ## Performance (Apple M-series, release build)
 
@@ -208,6 +230,7 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `examples/06_interest_rate.py` | Hull-White short-rate model, SABR volatility smile |
 | `examples/07_american_option.py` | LSMC American option pricing, early exercise premium |
 | `examples/08_multi_asset.py` | Multi-asset correlated GBM, portfolio VaR, correlation verification |
+| `examples/09_heston_calibration.py` | Heston COS pricing, implied vol smile, single/multi-maturity calibration |
 
 Each example has a Japanese counterpart (`*.ja.py`).
 
@@ -229,7 +252,7 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v1.2** ✅ | Full RNG state serialization, Heston QE scheme |
 | **v1.3** ✅ | Multi-asset correlated simulation |
 | **v1.4** ✅ | Greeks (bump-and-revalue FD + pathwise IPA) |
-| **v1.5** | Heston calibration (characteristic function + FFT/COS) |
+| **v1.5** ✅ | Heston calibration (COS method pricing + Projected LM) |
 | **v1.6** | DLPack zero-copy tensor interop |
 
 ## License

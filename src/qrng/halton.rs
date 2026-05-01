@@ -2,8 +2,8 @@ use ndarray::Array2;
 
 /// First 40 primes (all fit in u8) to support up to 40 dimensions.
 const PRIMES: [u8; 40] = [
-    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89,
-    97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173,
+    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
+    101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173,
 ];
 
 /// Maximum number of dimensions supported by the Halton generator.
@@ -21,11 +21,7 @@ pub const HALTON_MAX_DIM: usize = PRIMES.len();
 ///
 /// # Returns
 /// An `Array2<f64>` of shape `(n_samples, dim)` with values in (0, 1).
-pub fn halton_sequence(
-    dim: usize,
-    n_samples: usize,
-    skip: usize,
-) -> Result<Array2<f64>, String> {
+pub fn halton_sequence(dim: usize, n_samples: usize, skip: usize) -> Result<Array2<f64>, String> {
     if dim == 0 {
         return Err("dim must be at least 1".to_string());
     }

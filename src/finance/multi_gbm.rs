@@ -29,9 +29,7 @@ pub fn multi_gbm_paths(params: &MultiGbmParams, seed: u128) -> Result<Array3<f64
     let drift: Vec<f64> = (0..n_assets)
         .map(|i| (params.mu[i] - 0.5 * params.sigma[i] * params.sigma[i]) * dt)
         .collect();
-    let diffusion: Vec<f64> = (0..n_assets)
-        .map(|i| params.sigma[i] * sqrt_dt)
-        .collect();
+    let diffusion: Vec<f64> = (0..n_assets).map(|i| params.sigma[i] * sqrt_dt).collect();
 
     let base_paths = if params.antithetic {
         (params.n_paths + 1) / 2

@@ -1583,12 +1583,13 @@ dependencies = [
 
 [[package]]
 name = "stocha"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "approx",
  "faer",
  "halton",
  "ndarray",
+ "num-complex",
  "numpy",
  "pyo3",
  "rand 0.10.1",

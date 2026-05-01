@@ -1,6 +1,6 @@
+use crate::copula::gaussian::cholesky;
 use crate::dist::normal::NormalSampler;
 use crate::prng::Pcg64Dxsm;
-use crate::copula::gaussian::cholesky;
 use ndarray::{Array2, ArrayView2};
 
 /// Student-t CDF via regularized incomplete beta function (Abramowitz & Stegun).
@@ -17,8 +17,12 @@ fn student_t_cdf(x: f64, nu: f64) -> f64 {
 
 /// Regularized incomplete beta I_x(a, b) via continued fraction (modified Lentz).
 fn regularized_incomplete_beta(x: f64, a: f64, b: f64) -> f64 {
-    if x <= 0.0 { return 0.0; }
-    if x >= 1.0 { return 1.0; }
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
     if x > (a + 1.0) / (a + b + 2.0) {
         return 1.0 - regularized_incomplete_beta(1.0 - x, b, a);
     }
@@ -52,7 +56,9 @@ fn beta_cf(x: f64, a: f64, b: f64) -> f64 {
         d = 1.0 / d;
         let del = d * c;
         h *= del;
-        if (del - 1.0).abs() < EPS { break; }
+        if (del - 1.0).abs() < EPS {
+            break;
+        }
     }
     h
 }
@@ -73,9 +79,7 @@ fn lgamma(x: f64) -> f64 {
     ];
     let mut x = x;
     if x < 0.5 {
-        return std::f64::consts::PI.ln()
-            - (std::f64::consts::PI * x).sin().ln()
-            - lgamma(1.0 - x);
+        return std::f64::consts::PI.ln() - (std::f64::consts::PI * x).sin().ln() - lgamma(1.0 - x);
     }
     x -= 1.0;
     let mut acc = C[0];
@@ -99,7 +103,9 @@ fn sample_gamma(rng: &mut Pcg64Dxsm, shape: f64) -> f64 {
     loop {
         let x = NormalSampler::sample(rng);
         let v_inner = 1.0 + c * x;
-        if v_inner <= 0.0 { continue; }
+        if v_inner <= 0.0 {
+            continue;
+        }
         let v = v_inner * v_inner * v_inner;
         let u = rng.next_f64();
         // Squeeze test.

@@ -64,8 +64,7 @@ fn heston_euler(params: &HestonParams, seed: u128) -> Array2<f64> {
             let v_plus = v.max(0.0);
             let sqrt_v = v_plus.sqrt();
 
-            v += params.kappa * (params.theta - v_plus) * dt
-                + params.xi * sqrt_v * sqrt_dt * dw2;
+            v += params.kappa * (params.theta - v_plus) * dt + params.xi * sqrt_v * sqrt_dt * dw2;
 
             s *= ((params.mu - 0.5 * v_plus) * dt + sqrt_v * sqrt_dt * dw1).exp();
             path.push(s);
@@ -112,17 +111,14 @@ fn heston_qe(params: &HestonParams, seed: u128) -> Array2<f64> {
             // Conditional mean and variance of V(t+dt) given V(t)
             let m = k1 * (1.0 - e_kdt) / params.kappa + v_plus * e_kdt;
             let m = m.max(1e-15);
-            let s2 = v_plus * params.xi * params.xi * e_kdt
-                * (1.0 - e_kdt) / params.kappa
-                + k1 * params.xi * params.xi
-                    * (1.0 - e_kdt).powi(2)
+            let s2 = v_plus * params.xi * params.xi * e_kdt * (1.0 - e_kdt) / params.kappa
+                + k1 * params.xi * params.xi * (1.0 - e_kdt).powi(2)
                     / (2.0 * params.kappa * params.kappa);
             let psi = s2 / (m * m);
 
             let v_next = if psi <= PSI_C {
                 // Quadratic branch: V ~ a*(b + Z)^2
-                let b2 = 2.0 / psi - 1.0
-                    + (2.0 / psi * (2.0 / psi - 1.0)).sqrt();
+                let b2 = 2.0 / psi - 1.0 + (2.0 / psi * (2.0 / psi - 1.0)).sqrt();
                 let b2 = b2.max(0.0);
                 let a = m / (1.0 + b2);
                 let b = b2.sqrt();
@@ -154,8 +150,7 @@ fn heston_qe(params: &HestonParams, seed: u128) -> Array2<f64> {
             let k4_s = gamma2 * dt * (1.0 - params.rho * params.rho);
 
             let var_term = (k3_s * v_plus + k4_s * v_next).max(0.0);
-            let log_s = s.ln() + k0_s + k1_s * v_plus + k2_s * v_next
-                + var_term.sqrt() * z1;
+            let log_s = s.ln() + k0_s + k1_s * v_plus + k2_s * v_next + var_term.sqrt() * z1;
 
             s = log_s.clamp(-500.0, 500.0).exp();
             v = v_next;
@@ -248,7 +243,10 @@ mod tests {
         };
         let paths = heston_paths(&params, 77);
         assert_eq!(paths.shape(), &[5_000, 253]);
-        assert!(paths.iter().all(|&v| v > 0.0), "negative price under Feller violation");
+        assert!(
+            paths.iter().all(|&v| v > 0.0),
+            "negative price under Feller violation"
+        );
     }
 
     // QE tests

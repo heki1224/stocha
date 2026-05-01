@@ -7,14 +7,14 @@
 ///
 /// Computes the Black (lognormal) implied volatility σ_B(F, K, T).
 pub fn sabr_implied_vol(
-    f: f64,       // Forward price / rate.
-    k: f64,       // Strike.
-    t: f64,       // Time to expiry (years).
-    alpha: f64,   // Initial vol-of-vol (must be > 0).
-    beta: f64,    // CEV exponent in [0, 1].
-    rho: f64,     // Correlation between F and σ Brownians (in (-1, 1)).
-    nu: f64,      // Vol-of-vol (must be >= 0).
-    shift: f64,   // Shift for negative-rate support (default 0.0).
+    f: f64,     // Forward price / rate.
+    k: f64,     // Strike.
+    t: f64,     // Time to expiry (years).
+    alpha: f64, // Initial vol-of-vol (must be > 0).
+    beta: f64,  // CEV exponent in [0, 1].
+    rho: f64,   // Correlation between F and σ Brownians (in (-1, 1)).
+    nu: f64,    // Vol-of-vol (must be >= 0).
+    shift: f64, // Shift for negative-rate support (default 0.0).
 ) -> Result<f64, String> {
     if alpha <= 0.0 {
         return Err("alpha must be positive".into());
@@ -62,9 +62,13 @@ pub fn sabr_implied_vol(
     } else {
         let z_raw = (nu / alpha) * fk_beta * log_fk;
         // χ(z) = ln[(√(1-2ρz+z²) + z - ρ) / (1-ρ)]  (Hagan 2002 eq. A.3b)
-        let chi = (((1.0 - 2.0 * rho * z_raw + z_raw * z_raw).sqrt() + z_raw - rho)
-            / (1.0 - rho)).ln();
-        if chi.abs() < 1e-14 { 1.0 } else { z_raw / chi }
+        let chi =
+            (((1.0 - 2.0 * rho * z_raw + z_raw * z_raw).sqrt() + z_raw - rho) / (1.0 - rho)).ln();
+        if chi.abs() < 1e-14 {
+            1.0
+        } else {
+            z_raw / chi
+        }
     };
 
     // Correction terms.

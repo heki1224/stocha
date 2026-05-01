@@ -13,19 +13,24 @@ use finance::greeks::{
     required_scenarios, BumpDir, Greek, ModelSpec, Payoff, ScenarioKey,
 };
 use finance::heston::{heston_paths_with_scheme, HestonParams, HestonScheme};
+use finance::heston_calibration::calibrate as heston_calibrate_core;
+use finance::heston_cos::heston_cos_price_vec;
 use finance::hull_white::{hull_white_paths, HullWhiteParams};
 use finance::jump_diffusion::{merton_paths, MertonParams};
 use finance::lsmc::{lsmc_american_option as lsmc_price, LsmcParams};
 use finance::multi_gbm::{multi_gbm_paths, MultiGbmParams};
 use finance::sabr::sabr_implied_vol as sabr_vol;
 use finance::sabr_calibration::calibrate as sabr_calibrate_core;
-use qrng::{halton_sequence, sobol_sequence};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use ndarray::{Array2, Array3};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray1, PyReadonlyArray2,
+    PyUntypedArrayMethods,
+};
 use prng::Pcg64Dxsm;
-use risk::var_cvar as compute_var_cvar;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
+use qrng::{halton_sequence, sobol_sequence};
+use risk::var_cvar as compute_var_cvar;
 use std::collections::HashMap;
 
 /// Convert an owned `Array2<f64>` into a Python NumPy array.
@@ -87,11 +92,7 @@ impl RNG {
     }
 
     /// Generate `size` samples from N(0, 1) as a NumPy array (Marsaglia polar method).
-    fn standard_normal<'py>(
-        &mut self,
-        py: Python<'py>,
-        size: usize,
-    ) -> Bound<'py, PyArray1<f64>> {
+    fn standard_normal<'py>(&mut self, py: Python<'py>, size: usize) -> Bound<'py, PyArray1<f64>> {
         let mut buf = vec![0.0f64; size];
         py.detach(|| NormalSampler::sample_into(&mut self.inner, &mut buf));
         buf.into_pyarray(py)
@@ -150,8 +151,8 @@ impl RNG {
     ///     New ``RNG`` instance.
     #[staticmethod]
     fn from_state(json: &str) -> PyResult<RNG> {
-        let inner = Pcg64Dxsm::from_state(json)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        let inner =
+            Pcg64Dxsm::from_state(json).map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
         let seed = inner.seed();
         Ok(RNG { inner, seed })
     }
@@ -214,7 +215,15 @@ fn gbm<'py>(
         ));
     }
 
-    let params = GbmParams { s0, mu, sigma, t, steps, n_paths, antithetic };
+    let params = GbmParams {
+        s0,
+        mu,
+        sigma,
+        t,
+        steps,
+        n_paths,
+        antithetic,
+    };
     let result = py.detach(|| gbm_paths(&params, seed as u128));
     into_py_array2(result, py)
 }
@@ -234,7 +243,9 @@ fn sobol<'py>(
     n_samples: usize,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     if dim == 0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("dim must be at least 1"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "dim must be at least 1",
+        ));
     }
     let arr = py
         .detach(|| sobol_sequence(dim, n_samples))
@@ -260,7 +271,9 @@ fn halton_seq<'py>(
     skip: usize,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     if dim == 0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("dim must be at least 1"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "dim must be at least 1",
+        ));
     }
     let arr = py
         .detach(|| halton_sequence(dim, n_samples, skip))
@@ -306,25 +319,39 @@ fn heston<'py>(
     scheme: &str,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     if s0 <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("s0 must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "s0 must be positive",
+        ));
     }
     if v0 < 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("v0 must be non-negative"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "v0 must be non-negative",
+        ));
     }
     if kappa <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("kappa must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "kappa must be positive",
+        ));
     }
     if theta <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("theta must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "theta must be positive",
+        ));
     }
     if xi <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("xi must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "xi must be positive",
+        ));
     }
     if rho < -1.0 || rho > 1.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("rho must be in [-1, 1]"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "rho must be in [-1, 1]",
+        ));
     }
     if t <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "t must be positive",
+        ));
     }
     if steps == 0 || n_paths == 0 {
         return Err(pyo3::exceptions::PyValueError::new_err(
@@ -334,12 +361,25 @@ fn heston<'py>(
     let heston_scheme = match scheme {
         "euler" => HestonScheme::Euler,
         "qe" => HestonScheme::QE,
-        _ => return Err(pyo3::exceptions::PyValueError::new_err(
-            "scheme must be 'euler' or 'qe'",
-        )),
+        _ => {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "scheme must be 'euler' or 'qe'",
+            ))
+        }
     };
 
-    let params = HestonParams { s0, v0, mu, kappa, theta, xi, rho, t, steps, n_paths };
+    let params = HestonParams {
+        s0,
+        v0,
+        mu,
+        kappa,
+        theta,
+        xi,
+        rho,
+        t,
+        steps,
+        n_paths,
+    };
     let result = py.detach(|| heston_paths_with_scheme(&params, seed as u128, heston_scheme));
     into_py_array2(result, py)
 }
@@ -380,19 +420,29 @@ fn merton_jump_diffusion<'py>(
     seed: u64,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     if s0 <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("s0 must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "s0 must be positive",
+        ));
     }
     if sigma <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("sigma must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "sigma must be positive",
+        ));
     }
     if lambda_ < 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("lambda_ must be non-negative"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "lambda_ must be non-negative",
+        ));
     }
     if sigma_j < 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("sigma_j must be non-negative"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "sigma_j must be non-negative",
+        ));
     }
     if t <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "t must be positive",
+        ));
     }
     if steps == 0 || n_paths == 0 {
         return Err(pyo3::exceptions::PyValueError::new_err(
@@ -430,10 +480,7 @@ fn merton_jump_diffusion<'py>(
 ///     >>> returns = paths[:, -1] / paths[:, 0] - 1
 ///     >>> var, cvar = stocha.var_cvar(returns, confidence=0.95)
 #[pyfunction]
-fn var_cvar<'py>(
-    returns: PyReadonlyArray1<'py, f64>,
-    confidence: f64,
-) -> PyResult<(f64, f64)> {
+fn var_cvar<'py>(returns: PyReadonlyArray1<'py, f64>, confidence: f64) -> PyResult<(f64, f64)> {
     if confidence <= 0.0 || confidence >= 1.0 {
         return Err(pyo3::exceptions::PyValueError::new_err(
             "confidence must be in (0, 1)",
@@ -446,8 +493,7 @@ fn var_cvar<'py>(
         ));
     }
     let slice: Vec<f64> = arr.iter().copied().collect();
-    compute_var_cvar(&slice, confidence)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+    compute_var_cvar(&slice, confidence).map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
 }
 
 /// Sample from a Gaussian copula with a given correlation matrix.
@@ -546,13 +592,19 @@ fn hull_white<'py>(
     seed: u64,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     if a <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("a must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "a must be positive",
+        ));
     }
     if sigma <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("sigma must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "sigma must be positive",
+        ));
     }
     if t <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "t must be positive",
+        ));
     }
     if steps == 0 || n_paths == 0 {
         return Err(pyo3::exceptions::PyValueError::new_err(
@@ -560,7 +612,15 @@ fn hull_white<'py>(
         ));
     }
 
-    let params = HullWhiteParams { r0, a, theta, sigma, t, steps, n_paths };
+    let params = HullWhiteParams {
+        r0,
+        a,
+        theta,
+        sigma,
+        t,
+        steps,
+        n_paths,
+    };
     let result = py.detach(|| hull_white_paths(&params, seed as u128));
     into_py_array2(result, py)
 }
@@ -642,10 +702,8 @@ fn sabr_calibrate<'py>(
 ) -> PyResult<Bound<'py, PyDict>> {
     let strikes_vec: Vec<f64> = strikes.as_array().iter().copied().collect();
     let vols_vec: Vec<f64> = market_vols.as_array().iter().copied().collect();
-    let result = sabr_calibrate_core(
-        &strikes_vec, &vols_vec, f, t, beta, shift, max_iter, tol,
-    )
-    .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    let result = sabr_calibrate_core(&strikes_vec, &vols_vec, f, t, beta, shift, max_iter, tol)
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
     let dict = PyDict::new(py);
     dict.set_item("alpha", result.alpha)?;
@@ -691,7 +749,9 @@ fn multi_gbm<'py>(
 ) -> PyResult<Bound<'py, PyArray3<f64>>> {
     let n = s0.len();
     if n == 0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("s0 must not be empty"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "s0 must not be empty",
+        ));
     }
     if mu.len() != n || sigma.len() != n {
         return Err(pyo3::exceptions::PyValueError::new_err(
@@ -699,13 +759,19 @@ fn multi_gbm<'py>(
         ));
     }
     if s0.iter().any(|&v| v <= 0.0) {
-        return Err(pyo3::exceptions::PyValueError::new_err("all s0 must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "all s0 must be positive",
+        ));
     }
     if sigma.iter().any(|&v| v <= 0.0) {
-        return Err(pyo3::exceptions::PyValueError::new_err("all sigma must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "all sigma must be positive",
+        ));
     }
     if t <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "t must be positive",
+        ));
     }
     if steps == 0 || n_paths == 0 {
         return Err(pyo3::exceptions::PyValueError::new_err(
@@ -715,13 +781,21 @@ fn multi_gbm<'py>(
     let corr_shape = corr.shape();
     if corr_shape[0] != n || corr_shape[1] != n {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "corr must be ({}, {}), got ({}, {})", n, n, corr_shape[0], corr_shape[1]
+            "corr must be ({}, {}), got ({}, {})",
+            n, n, corr_shape[0], corr_shape[1]
         )));
     }
 
     let corr_owned = corr.as_array().to_owned();
     let params = MultiGbmParams {
-        s0, mu, sigma, corr: corr_owned, t, steps, n_paths, antithetic,
+        s0,
+        mu,
+        sigma,
+        corr: corr_owned,
+        t,
+        steps,
+        n_paths,
+        antithetic,
     };
     let result = py
         .detach(|| multi_gbm_paths(&params, seed as u128))
@@ -770,16 +844,24 @@ fn lsmc_american_option<'py>(
     seed: u64,
 ) -> PyResult<(f64, f64)> {
     if s0 <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("s0 must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "s0 must be positive",
+        ));
     }
     if k <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("k must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "k must be positive",
+        ));
     }
     if sigma <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("sigma must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "sigma must be positive",
+        ));
     }
     if t <= 0.0 {
-        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "t must be positive",
+        ));
     }
     if steps == 0 || n_paths == 0 {
         return Err(pyo3::exceptions::PyValueError::new_err(
@@ -797,7 +879,17 @@ fn lsmc_american_option<'py>(
         ));
     }
 
-    let params = LsmcParams { s0, k, r, sigma, t, steps, n_paths, is_put, poly_degree };
+    let params = LsmcParams {
+        s0,
+        k,
+        r,
+        sigma,
+        t,
+        steps,
+        n_paths,
+        is_put,
+        poly_degree,
+    };
     let (price, std_err) = py.detach(|| lsmc_price(&params, seed as u128));
     Ok((price, std_err))
 }
@@ -974,8 +1066,15 @@ fn greeks_fd<'py>(
                 )))
             }
         };
-        let results =
-            py.detach(|| greeks_fd_core(&model_spec, &payoff_enum, &greek_list, bump_size, seed as u128));
+        let results = py.detach(|| {
+            greeks_fd_core(
+                &model_spec,
+                &payoff_enum,
+                &greek_list,
+                bump_size,
+                seed as u128,
+            )
+        });
         let dict = PyDict::new(py);
         for (g, v) in results {
             dict.set_item(greek_name(g), v)?;
@@ -1016,8 +1115,7 @@ fn greeks_fd<'py>(
             let payoff_values: Vec<f64> = payoff_result.extract(py)?;
 
             let discount = (-r_rate * mat).exp();
-            let price =
-                discount * payoff_values.iter().sum::<f64>() / payoff_values.len() as f64;
+            let price = discount * payoff_values.iter().sum::<f64>() / payoff_values.len() as f64;
             prices.insert(key, price);
         }
 
@@ -1100,12 +1198,201 @@ fn greeks_pathwise<'py>(
     }
 
     let results = py.detach(|| {
-        greeks_pathwise_core(s0, r, sigma, t, strike, is_call, n_paths, n_steps, &greek_list, seed as u128)
+        greeks_pathwise_core(
+            s0,
+            r,
+            sigma,
+            t,
+            strike,
+            is_call,
+            n_paths,
+            n_steps,
+            &greek_list,
+            seed as u128,
+        )
     });
     let dict = PyDict::new(py);
     for (g, v) in results {
         dict.set_item(greek_name(g), v)?;
     }
+    Ok(dict)
+}
+
+/// Price European options under the Heston model using the COS method.
+///
+/// Uses the Fang & Oosterlee (2008) COS expansion with the Albrecher (2007)
+/// characteristic function formulation (branch-cut safe).
+///
+/// Args:
+///     strikes:  1-D array of strike prices.
+///     is_call:  1-D array of booleans (True for call, False for put).
+///     s0:       Current spot price (must be > 0).
+///     v0:       Initial variance (must be > 0).
+///     r:        Risk-free rate (annualized).
+///     kappa:    Mean-reversion speed (must be > 0).
+///     theta:    Long-run variance (must be > 0).
+///     xi:       Vol-of-vol (must be > 0).
+///     rho:      Correlation in (-1, 1).
+///     t:        Time to maturity in years (must be > 0).
+///     n_cos:    Number of COS terms (default 160).
+///
+/// Returns:
+///     1-D NumPy array of option prices, same length as ``strikes``.
+#[pyfunction]
+#[pyo3(signature = (strikes, is_call, s0, v0, r, kappa, theta, xi, rho, t, n_cos=160))]
+fn heston_price<'py>(
+    py: Python<'py>,
+    strikes: PyReadonlyArray1<'py, f64>,
+    is_call: &Bound<'py, PyList>,
+    s0: f64,
+    v0: f64,
+    r: f64,
+    kappa: f64,
+    theta: f64,
+    xi: f64,
+    rho: f64,
+    t: f64,
+    n_cos: usize,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    if s0 <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "s0 must be positive",
+        ));
+    }
+    if v0 <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "v0 must be positive",
+        ));
+    }
+    if kappa <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "kappa must be positive",
+        ));
+    }
+    if theta <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "theta must be positive",
+        ));
+    }
+    if xi <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "xi must be positive",
+        ));
+    }
+    if rho <= -1.0 || rho >= 1.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "rho must be in (-1, 1)",
+        ));
+    }
+    if t <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "t must be positive",
+        ));
+    }
+    if n_cos == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_cos must be positive",
+        ));
+    }
+
+    let strikes_vec: Vec<f64> = strikes.as_array().iter().copied().collect();
+    let is_call_vec: Vec<bool> = is_call
+        .iter()
+        .map(|item| item.extract::<bool>())
+        .collect::<PyResult<Vec<bool>>>()?;
+
+    if strikes_vec.len() != is_call_vec.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "strikes and is_call must have the same length",
+        ));
+    }
+
+    let prices = py.detach(|| {
+        heston_cos_price_vec(
+            s0,
+            v0,
+            r,
+            kappa,
+            theta,
+            xi,
+            rho,
+            t,
+            &strikes_vec,
+            &is_call_vec,
+            n_cos,
+        )
+    });
+    Ok(prices.into_pyarray(py))
+}
+
+/// Calibrate Heston model parameters to market option prices.
+///
+/// Fits ``(v0, kappa, theta, xi, rho)`` using a Projected Levenberg-Marquardt
+/// optimizer with Vega-weighted price residuals. The COS method is used for
+/// fast analytical repricing during calibration.
+///
+/// Args:
+///     strikes:       1-D array of strike prices.
+///     maturities:    1-D array of times to maturity (years).
+///     market_prices: 1-D array of observed option prices.
+///     is_call:       1-D array of booleans (True for call, False for put).
+///     s0:            Current spot price (must be > 0).
+///     r:             Risk-free rate (annualized).
+///     max_iter:      Maximum LM iterations (default 200).
+///     tol:           Convergence tolerance (default 1e-8).
+///     n_cos:         COS terms for repricing (default 160).
+///
+/// Returns:
+///     Dict: ``v0``, ``kappa``, ``theta``, ``xi``, ``rho``, ``rmse``,
+///     ``iterations``, ``converged``, ``feller_satisfied``.
+#[pyfunction]
+#[pyo3(signature = (strikes, maturities, market_prices, is_call, s0, r, max_iter=200, tol=1e-8, n_cos=160))]
+fn heston_calibrate<'py>(
+    py: Python<'py>,
+    strikes: PyReadonlyArray1<'py, f64>,
+    maturities: PyReadonlyArray1<'py, f64>,
+    market_prices: PyReadonlyArray1<'py, f64>,
+    is_call: &Bound<'py, PyList>,
+    s0: f64,
+    r: f64,
+    max_iter: usize,
+    tol: f64,
+    n_cos: usize,
+) -> PyResult<Bound<'py, PyDict>> {
+    let strikes_vec: Vec<f64> = strikes.as_array().iter().copied().collect();
+    let mat_vec: Vec<f64> = maturities.as_array().iter().copied().collect();
+    let prices_vec: Vec<f64> = market_prices.as_array().iter().copied().collect();
+    let is_call_vec: Vec<bool> = is_call
+        .iter()
+        .map(|item| item.extract::<bool>())
+        .collect::<PyResult<Vec<bool>>>()?;
+
+    let result = py
+        .detach(|| {
+            heston_calibrate_core(
+                &strikes_vec,
+                &mat_vec,
+                &prices_vec,
+                &is_call_vec,
+                s0,
+                r,
+                max_iter,
+                tol,
+                n_cos,
+            )
+        })
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+
+    let dict = PyDict::new(py);
+    dict.set_item("v0", result.v0)?;
+    dict.set_item("kappa", result.kappa)?;
+    dict.set_item("theta", result.theta)?;
+    dict.set_item("xi", result.xi)?;
+    dict.set_item("rho", result.rho)?;
+    dict.set_item("rmse", result.rmse)?;
+    dict.set_item("iterations", result.iterations)?;
+    dict.set_item("converged", result.converged)?;
+    dict.set_item("feller_satisfied", result.feller_satisfied)?;
     Ok(dict)
 }
 
@@ -1128,6 +1415,8 @@ fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(lsmc_american_option, m)?)?;
     m.add_function(wrap_pyfunction!(greeks_fd, m)?)?;
     m.add_function(wrap_pyfunction!(greeks_pathwise, m)?)?;
-    m.add("__version__", "1.4.0")?;
+    m.add_function(wrap_pyfunction!(heston_price, m)?)?;
+    m.add_function(wrap_pyfunction!(heston_calibrate, m)?)?;
+    m.add("__version__", "1.5.0")?;
     Ok(())
 }

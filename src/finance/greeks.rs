@@ -388,11 +388,7 @@ pub fn greeks_pathwise_core(
                     let sum: f64 = terminals
                         .iter()
                         .map(|&s_t| {
-                            let in_money = if is_call {
-                                s_t > strike
-                            } else {
-                                s_t < strike
-                            };
+                            let in_money = if is_call { s_t > strike } else { s_t < strike };
                             if in_money {
                                 let sign = if is_call { 1.0 } else { -1.0 };
                                 sign * s_t / s0
@@ -407,17 +403,11 @@ pub fn greeks_pathwise_core(
                     let sum: f64 = terminals
                         .iter()
                         .map(|&s_t| {
-                            let in_money = if is_call {
-                                s_t > strike
-                            } else {
-                                s_t < strike
-                            };
+                            let in_money = if is_call { s_t > strike } else { s_t < strike };
                             if in_money {
                                 let sign = if is_call { 1.0 } else { -1.0 };
                                 let log_return = (s_t / s0).ln();
-                                sign * s_t
-                                    * (log_return - (r + 0.5 * sigma * sigma) * t)
-                                    / sigma
+                                sign * s_t * (log_return - (r + 0.5 * sigma * sigma) * t) / sigma
                             } else {
                                 0.0
                             }

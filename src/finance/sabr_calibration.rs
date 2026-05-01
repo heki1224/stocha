@@ -181,8 +181,8 @@ pub fn calibrate(
 
         let new_rho = (rho + dp_rho).clamp(-RHO_BOUND, RHO_BOUND);
         let new_nu = (nu + dp_nu).clamp(NU_MIN, NU_MAX);
-        let new_alpha = solve_alpha_atm(f, t, beta, new_rho, new_nu, shift, sigma_atm)
-            .unwrap_or(alpha);
+        let new_alpha =
+            solve_alpha_atm(f, t, beta, new_rho, new_nu, shift, sigma_atm).unwrap_or(alpha);
         let new_cost = cost_at(new_alpha, new_rho, new_nu);
 
         if new_cost < cost {
@@ -294,7 +294,11 @@ mod tests {
             .collect();
         let res = calibrate(&strikes, &vols, f, t, beta, 0.0, 200, 1e-12).unwrap();
         assert!(res.rmse < 1e-6, "rmse={}", res.rmse);
-        assert!((res.alpha - alpha).abs() / alpha < 0.01, "alpha={}", res.alpha);
+        assert!(
+            (res.alpha - alpha).abs() / alpha < 0.01,
+            "alpha={}",
+            res.alpha
+        );
         assert!((res.rho - rho).abs() < 0.05, "rho={}", res.rho);
         assert!((res.nu - nu).abs() < 0.05, "nu={}", res.nu);
     }

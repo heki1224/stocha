@@ -72,8 +72,7 @@ impl Pcg64Dxsm {
                 seed: full.seed,
             });
         }
-        let seed_only: SeedOnly =
-            serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let seed_only: SeedOnly = serde_json::from_str(json).map_err(|e| e.to_string())?;
         Ok(Self::new(seed_only.seed))
     }
 }

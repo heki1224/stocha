@@ -17,6 +17,7 @@
 - **ボラティリティ**: SABR インプライドボラティリティ（Hagan 2002、マイナス金利対応）
 - **オプション価格付け**: Longstaff-Schwartz LSMC（アメリカンオプション）
 - **グリークス**: バンピング有限差分（全モデル） + Pathwise IPA（GBM）
+- **キャリブレーション**: SABR（射影 LM）・Heston（COS 法 + 射影 LM）
 - **並列処理**: Rayon によるパス生成の並列化
 - **完全再現性**: ブロック分割 RNG ストリームによりスレッド数に依存せず同一結果を保証
 
@@ -130,6 +131,25 @@ price, std_err = stocha.lsmc_american_option(
 )
 print(f"アメリカンプット: {price:.4f} ± {std_err:.4f}")
 
+# ── Heston 解析プライシング（COS 法） ────────────────────────────────────
+prices = stocha.heston_price(
+    strikes=np.array([90.0, 100.0, 110.0]),
+    is_call=[True, True, True],
+    s0=100.0, v0=0.04, r=0.05,
+    kappa=2.0, theta=0.04, xi=0.3, rho=-0.7, t=1.0,
+)
+print(f"Heston コール価格: {prices}")
+
+# ── Heston キャリブレーション ─────────────────────────────────────────────
+fit = stocha.heston_calibrate(
+    strikes=np.array([90.0, 95.0, 100.0, 105.0, 110.0]),
+    maturities=np.array([1.0, 1.0, 1.0, 1.0, 1.0]),
+    market_prices=prices_from_market,  # 観測価格
+    is_call=[True]*5,
+    s0=100.0, r=0.05,
+)
+print(f"v0={fit['v0']:.4f}, kappa={fit['kappa']:.2f}, rho={fit['rho']:.2f}")
+
 # ── モンテカルロ・グリークス ──────────────────────────────────────────────
 greeks = stocha.greeks_fd(
     model="gbm",
@@ -187,6 +207,8 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `lsmc_american_option(s0, k, r, sigma, t, steps, n_paths, ...)` | LSMC によるアメリカンオプション価格付け |
 | `greeks_fd(model, params, payoff, strike, n_paths, n_steps, greeks, ...)` | バンピング有限差分によるMCグリークス（GBM/Heston/Merton） |
 | `greeks_pathwise(s0, r, sigma, t, strike, is_call, n_paths, n_steps, greeks)` | Pathwise IPA によるMCグリークス（GBM 限定; delta, vega） |
+| `heston_price(strikes, is_call, s0, v0, r, kappa, theta, xi, rho, t, n_cos)` | COS 法による Heston 解析プライシング（Fang & Oosterlee 2008） |
+| `heston_calibrate(strikes, maturities, market_prices, is_call, s0, r, ...)` | Heston `(v0, κ, θ, ξ, ρ)` のキャリブレーション（射影 LM + Vega 加重 COS 再評価） |
 
 ## パフォーマンス（Apple M シリーズ、リリースビルド）
 
@@ -208,6 +230,7 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `examples/06_interest_rate.ja.py` | Hull-White 金利モデル・SABR ボラティリティスマイル |
 | `examples/07_american_option.ja.py` | LSMC アメリカンオプション・早期行使プレミアム |
 | `examples/08_multi_asset.ja.py` | マルチアセット相関 GBM・ポートフォリオ VaR・相関検証 |
+| `examples/09_heston_calibration.ja.py` | Heston COS 法プライシング・IV スマイル・単一/マルチ満期キャリブレーション |
 
 ## 対象ユーザー
 
@@ -227,7 +250,7 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | **v1.2** ✅ | 完全 RNG 状態シリアライズ、Heston QE スキーム |
 | **v1.3** ✅ | マルチアセット相関シミュレーション |
 | **v1.4** ✅ | グリークス（バンピング有限差分 + Pathwise IPA） |
-| **v1.5** | Heston キャリブレーション（特性関数 + FFT/COS法） |
+| **v1.5** ✅ | Heston キャリブレーション（COS 法プライシング + 射影 LM） |
 | **v1.6** | DLPack ゼロコピーテンソル連携 |
 
 ## ライセンス

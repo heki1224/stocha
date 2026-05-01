@@ -24,7 +24,7 @@ src/               # Rust source (PyO3 extension)
   lib.rs           # Module registration + into_py_array2 helper
   prng/            # PCG64DXSM RNG
   qrng/            # Sobol / Halton quasi-random sequences
-  finance/         # GBM, Heston, jump_diffusion (Merton), Hull-White, SABR, LSMC
+  finance/         # GBM, Heston, jump_diffusion (Merton), Hull-White, SABR, LSMC, BS, Heston COS/CF/Calibration
   risk/            # VaR / CVaR
   copula/          # Gaussian / Student-t copulas
   dist/            # Probability distributions (Ziggurat normal, norm_ppf, etc.)
@@ -35,7 +35,7 @@ tests/
   test_rng.py      # RNG, Sobol, Halton (src/prng/, src/qrng/)
   test_models.py   # GBM, Heston, Merton, Hull-White, SABR, LSMC (src/finance/)
   test_risk.py     # VaR/CVaR, copulas (src/risk/, src/copula/)
-examples/          # Bilingual tutorials (*.py + *.ja.py), 01–07
+examples/          # Bilingual tutorials (*.py + *.ja.py), 01–09
 tasks/lessons.md   # Accumulated lessons from past sessions
 CHANGELOG.md       # Version history (source of truth for release notes)
 ```

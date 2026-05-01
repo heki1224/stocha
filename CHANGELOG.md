@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-01
+
+### Added
+
+- **`heston_price`**: Analytical European option pricing under the Heston model
+  using the COS method (Fang & Oosterlee 2008). Employs the Albrecher et al.
+  (2007) characteristic function formulation that avoids complex logarithm
+  branch-cut discontinuities. Truncation range from cumulants with hard-limit
+  safety bounds. Supports vectorized multi-strike pricing with shared CF cache.
+  Default N=160 COS terms; configurable via `n_cos` parameter.
+- **`heston_calibrate`**: Fit Heston parameters `(v0, kappa, theta, xi, rho)` to
+  observed option prices. Uses a Projected Levenberg-Marquardt optimizer with
+  Vega-weighted price residuals (avoids IV solver overhead). Central-difference
+  Jacobian with automatic switch to forward/backward difference near parameter
+  boundaries. Rayon-parallel Jacobian computation across parameters. Heuristic
+  initial guess from ATM implied volatility. Feller condition reported as a
+  diagnostic flag (soft constraint). Returns dict with fitted parameters, RMSE,
+  iteration count, convergence status, and Feller flag.
+
+### Dependencies
+
+- `num-complex`: added `0.4` for complex arithmetic in characteristic function
+
 ## [1.4.0] - 2026-04-30
 
 ### Added
@@ -206,7 +229,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `standard_normal(10M samples)` | ~155M samples/sec |
 | `gbm(n_paths=100k, steps=252)` | ~680k paths/sec |
 
-[Unreleased]: https://github.com/heki1224/stocha/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/heki1224/stocha/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/heki1224/stocha/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/heki1224/stocha/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/heki1224/stocha/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/heki1224/stocha/compare/v1.1.0...v1.2.0

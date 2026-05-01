@@ -33,6 +33,8 @@ from stocha._stocha import multi_gbm as _multi_gbm
 from stocha._stocha import lsmc_american_option as _lsmc_american_option
 from stocha._stocha import greeks_fd as _greeks_fd
 from stocha._stocha import greeks_pathwise as _greeks_pathwise
+from stocha._stocha import heston_price as _heston_price
+from stocha._stocha import heston_calibrate as _heston_calibrate
 from stocha._stocha import __version__
 
 __all__ = [
@@ -52,6 +54,8 @@ __all__ = [
     "lsmc_american_option",
     "greeks_fd",
     "greeks_pathwise",
+    "heston_price",
+    "heston_calibrate",
     "__version__",
 ]
 
@@ -746,4 +750,102 @@ def greeks_pathwise(
         strike=strike, is_call=is_call,
         n_paths=n_paths, n_steps=n_steps,
         greeks=greeks, seed=seed,
+    )
+
+
+def heston_price(
+    strikes: np.ndarray,
+    is_call: list[bool],
+    s0: float,
+    v0: float,
+    r: float,
+    kappa: float,
+    theta: float,
+    xi: float,
+    rho: float,
+    t: float,
+    n_cos: int = 160,
+) -> np.ndarray:
+    """Price European options under the Heston model using the COS method.
+
+    Uses the Fang & Oosterlee (2008) COS expansion with the Albrecher (2007)
+    characteristic function (branch-cut safe).
+
+    Args:
+        strikes:  1-D array of strike prices.
+        is_call:  List of booleans (True for call, False for put).
+        s0:       Spot price (must be > 0).
+        v0:       Initial variance (must be > 0).
+        r:        Risk-free rate (annualized).
+        kappa:    Mean-reversion speed (must be > 0).
+        theta:    Long-run variance (must be > 0).
+        xi:       Vol-of-vol (must be > 0).
+        rho:      Correlation in (-1, 1).
+        t:        Time to maturity in years (must be > 0).
+        n_cos:    Number of COS expansion terms (default 160).
+
+    Returns:
+        1-D NumPy array of option prices.
+
+    Example:
+        >>> import numpy as np
+        >>> prices = heston_price(
+        ...     strikes=np.array([90.0, 100.0, 110.0]),
+        ...     is_call=[True, True, True],
+        ...     s0=100.0, v0=0.04, r=0.05,
+        ...     kappa=2.0, theta=0.04, xi=0.3, rho=-0.7, t=1.0)
+    """
+    return _heston_price(
+        np.asarray(strikes, dtype=np.float64),
+        list(is_call),
+        s0=s0, v0=v0, r=r, kappa=kappa, theta=theta,
+        xi=xi, rho=rho, t=t, n_cos=n_cos,
+    )
+
+
+def heston_calibrate(
+    strikes: np.ndarray,
+    maturities: np.ndarray,
+    market_prices: np.ndarray,
+    is_call: list[bool],
+    s0: float,
+    r: float,
+    max_iter: int = 200,
+    tol: float = 1e-8,
+    n_cos: int = 160,
+) -> dict:
+    """Calibrate Heston parameters to market option prices.
+
+    Fits ``(v0, kappa, theta, xi, rho)`` using Projected Levenberg-Marquardt
+    with Vega-weighted price residuals. COS method repricing ensures speed.
+
+    Args:
+        strikes:       1-D array of strike prices.
+        maturities:    1-D array of times to maturity (years).
+        market_prices: 1-D array of observed option prices.
+        is_call:       List of booleans (True for call).
+        s0:            Spot price (must be > 0).
+        r:             Risk-free rate.
+        max_iter:      Max LM iterations (default 200).
+        tol:           Convergence tolerance (default 1e-8).
+        n_cos:         COS terms (default 160).
+
+    Returns:
+        Dict with ``v0``, ``kappa``, ``theta``, ``xi``, ``rho``, ``rmse``,
+        ``iterations``, ``converged``, ``feller_satisfied``.
+
+    Example:
+        >>> r = heston_calibrate(
+        ...     strikes=np.array([90, 95, 100, 105, 110]),
+        ...     maturities=np.array([1.0]*5),
+        ...     market_prices=prices,
+        ...     is_call=[True]*5,
+        ...     s0=100.0, r=0.05)
+    """
+    return _heston_calibrate(
+        np.asarray(strikes, dtype=np.float64),
+        np.asarray(maturities, dtype=np.float64),
+        np.asarray(market_prices, dtype=np.float64),
+        list(is_call),
+        s0=s0, r=r, max_iter=max_iter, tol=tol, n_cos=n_cos,
     )

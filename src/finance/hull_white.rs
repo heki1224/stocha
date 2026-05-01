@@ -61,8 +61,13 @@ mod tests {
     #[test]
     fn test_hull_white_shape() {
         let params = HullWhiteParams {
-            r0: 0.05, a: 0.1, theta: 0.05, sigma: 0.01,
-            t: 1.0, steps: 12, n_paths: 100,
+            r0: 0.05,
+            a: 0.1,
+            theta: 0.05,
+            sigma: 0.01,
+            t: 1.0,
+            steps: 12,
+            n_paths: 100,
         };
         let paths = hull_white_paths(&params, 42);
         assert_eq!(paths.shape(), [100, 13]);
@@ -73,12 +78,21 @@ mod tests {
     fn test_hull_white_mean_reversion() {
         // With a=1, theta=0.05, r0=0.10 → should drift toward theta/a = 0.05.
         let params = HullWhiteParams {
-            r0: 0.10, a: 1.0, theta: 0.05, sigma: 0.001,
-            t: 10.0, steps: 100, n_paths: 1000,
+            r0: 0.10,
+            a: 1.0,
+            theta: 0.05,
+            sigma: 0.001,
+            t: 10.0,
+            steps: 100,
+            n_paths: 1000,
         };
         let paths = hull_white_paths(&params, 99);
         let terminal_mean = paths.column(100).mean().unwrap();
-        assert!((terminal_mean - 0.05).abs() < 0.01, "mean={}", terminal_mean);
+        assert!(
+            (terminal_mean - 0.05).abs() < 0.01,
+            "mean={}",
+            terminal_mean
+        );
     }
 
     #[test]
@@ -86,8 +100,13 @@ mod tests {
         // Negative initial rate (e.g. EUR/CHF negative rate environment).
         // Exact simulation handles r0 < 0 without special treatment.
         let params = HullWhiteParams {
-            r0: -0.01, a: 0.5, theta: 0.02, sigma: 0.005,
-            t: 5.0, steps: 60, n_paths: 500,
+            r0: -0.01,
+            a: 0.5,
+            theta: 0.02,
+            sigma: 0.005,
+            t: 5.0,
+            steps: 60,
+            n_paths: 500,
         };
         let paths = hull_white_paths(&params, 7);
         assert_eq!(paths.shape(), [500, 61]);
@@ -97,7 +116,10 @@ mod tests {
         }
         // Terminal mean should drift toward theta/a = 0.04.
         let terminal_mean = paths.column(60).mean().unwrap();
-        assert!(terminal_mean > -0.05 && terminal_mean < 0.10,
-            "terminal_mean={} unexpectedly far from long-run mean", terminal_mean);
+        assert!(
+            terminal_mean > -0.05 && terminal_mean < 0.10,
+            "terminal_mean={} unexpectedly far from long-run mean",
+            terminal_mean
+        );
     }
 }

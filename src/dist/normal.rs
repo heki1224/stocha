@@ -35,7 +35,8 @@ impl NormalSampler {
             }
 
             // Wedge rejection: use a fresh random number (Doornik fix)
-            let y = ZIGGURAT_Y[layer] + rng.next_f64() * (ZIGGURAT_Y[layer + 1] - ZIGGURAT_Y[layer]);
+            let y =
+                ZIGGURAT_Y[layer] + rng.next_f64() * (ZIGGURAT_Y[layer + 1] - ZIGGURAT_Y[layer]);
             if y < (-0.5 * x * x).exp() {
                 return sign * x;
             }

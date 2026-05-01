@@ -1,5 +1,5 @@
 use crate::finance::gbm::{gbm_paths, GbmParams};
-use faer::{Mat, prelude::*};
+use faer::{prelude::*, Mat};
 
 pub struct LsmcParams {
     pub s0: f64,
@@ -65,8 +65,7 @@ pub fn lsmc_american_option(params: &LsmcParams, seed: u128) -> (f64, f64) {
         // Normalize spot prices to improve numerical conditioning.
         let s_mean = itm.iter().map(|&i| spot[i]).sum::<f64>() / itm.len() as f64;
         let s_std = {
-            let v = itm.iter().map(|&i| (spot[i] - s_mean).powi(2)).sum::<f64>()
-                / itm.len() as f64;
+            let v = itm.iter().map(|&i| (spot[i] - s_mean).powi(2)).sum::<f64>() / itm.len() as f64;
             v.sqrt().max(1e-12)
         };
 
@@ -90,9 +89,7 @@ pub fn lsmc_american_option(params: &LsmcParams, seed: u128) -> (f64, f64) {
         // Exercise if intrinsic > estimated continuation.
         for &path_i in &itm {
             let x = (spot[path_i] - s_mean) / s_std;
-            let continuation: f64 = (0..ncols)
-                .map(|col| coeffs[col] * x.powi(col as i32))
-                .sum();
+            let continuation: f64 = (0..ncols).map(|col| coeffs[col] * x.powi(col as i32)).sum();
             let exercise = intrinsic(spot[path_i], params.k, params.is_put);
             if exercise > continuation.max(0.0) {
                 cashflow[path_i] = exercise;
@@ -109,8 +106,7 @@ pub fn lsmc_american_option(params: &LsmcParams, seed: u128) -> (f64, f64) {
     let std_err = if n <= 1 {
         0.0
     } else {
-        let var = cashflow.iter().map(|&c| (c - mean).powi(2)).sum::<f64>()
-            / (n - 1) as f64;
+        let var = cashflow.iter().map(|&c| (c - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
         (var / n as f64).sqrt()
     };
 
@@ -118,7 +114,11 @@ pub fn lsmc_american_option(params: &LsmcParams, seed: u128) -> (f64, f64) {
 }
 
 fn intrinsic(s: f64, k: f64, is_put: bool) -> f64 {
-    if is_put { (k - s).max(0.0) } else { (s - k).max(0.0) }
+    if is_put {
+        (k - s).max(0.0)
+    } else {
+        (s - k).max(0.0)
+    }
 }
 
 #[cfg(test)]
@@ -135,14 +135,25 @@ mod tests {
     #[test]
     fn test_lsmc_put_reasonable() {
         let params = LsmcParams {
-            s0: 100.0, k: 100.0, r: 0.05, sigma: 0.20,
-            t: 1.0, steps: 50, n_paths: 20_000,
-            is_put: true, poly_degree: 3,
+            s0: 100.0,
+            k: 100.0,
+            r: 0.05,
+            sigma: 0.20,
+            t: 1.0,
+            steps: 50,
+            n_paths: 20_000,
+            is_put: true,
+            poly_degree: 3,
         };
         let (price, std_err) = lsmc_american_option(&params, 42);
         let european = bs_put(100.0, 100.0, 0.05, 0.20, 1.0);
         // American put >= European put (early exercise premium).
-        assert!(price >= european - 3.0 * std_err, "price={}, eu={}", price, european);
+        assert!(
+            price >= european - 3.0 * std_err,
+            "price={}, eu={}",
+            price,
+            european
+        );
         assert!(price < european + 2.0, "price too high: {}", price);
         assert!(std_err < 0.10, "std_err too large: {}", std_err);
     }
@@ -151,15 +162,25 @@ mod tests {
     fn test_lsmc_call_reasonable() {
         // Deep ITM call: price should be close to intrinsic (S0 - K * exp(-r*T))
         let params = LsmcParams {
-            s0: 110.0, k: 100.0, r: 0.05, sigma: 0.20,
-            t: 1.0, steps: 50, n_paths: 20_000,
-            is_put: false, poly_degree: 3,
+            s0: 110.0,
+            k: 100.0,
+            r: 0.05,
+            sigma: 0.20,
+            t: 1.0,
+            steps: 50,
+            n_paths: 20_000,
+            is_put: false,
+            poly_degree: 3,
         };
         let (price, std_err) = lsmc_american_option(&params, 42);
         // American call on non-dividend-paying stock == European call (no early exercise).
         // Price must be positive and std_err finite.
         assert!(price > 0.0, "call price must be positive: {}", price);
-        assert!(std_err >= 0.0 && std_err.is_finite(), "std_err invalid: {}", std_err);
+        assert!(
+            std_err >= 0.0 && std_err.is_finite(),
+            "std_err invalid: {}",
+            std_err
+        );
         // Rough sanity: call price < S0
         assert!(price < params.s0, "call price exceeds S0: {}", price);
     }

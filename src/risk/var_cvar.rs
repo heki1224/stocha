@@ -61,7 +61,16 @@ mod tests {
         let returns: Vec<f64> = (1..=20).map(|i| i as f64 * 0.01).collect();
         let (var, cvar) = var_cvar(&returns, 0.95).unwrap();
         // losses = [-0.20, -0.19, ..., -0.01]; at 95% idx = ceil(19) = 19 → losses[19] = -0.01
-        assert!(var < 0.0, "VaR should be negative when all returns are positive: {}", var);
-        assert!(cvar <= var + 1e-10, "CVaR >= VaR must hold: var={}, cvar={}", var, cvar);
+        assert!(
+            var < 0.0,
+            "VaR should be negative when all returns are positive: {}",
+            var
+        );
+        assert!(
+            cvar <= var + 1e-10,
+            "CVaR >= VaR must hold: var={}, cvar={}",
+            var,
+            cvar
+        );
     }
 }

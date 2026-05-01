@@ -594,3 +594,220 @@ class TestLsmcAmericanOption:
         p1, e1 = stocha.lsmc_american_option(**kwargs)
         p2, e2 = stocha.lsmc_american_option(**kwargs)
         assert p1 == p2
+
+
+# ---------------------------------------------------------------------------
+# Heston COS Pricing
+# ---------------------------------------------------------------------------
+
+class TestHestonPrice:
+    """Tests for heston_price (COS method analytical pricing)."""
+
+    PARAMS = dict(s0=100.0, v0=0.04, r=0.05,
+                  kappa=2.0, theta=0.04, xi=0.3, rho=-0.7, t=1.0)
+
+    def test_atm_call_reasonable(self):
+        prices = stocha.heston_price(
+            strikes=np.array([100.0]), is_call=[True], **self.PARAMS,
+        )
+        assert 5.0 < prices[0] < 20.0, f"ATM call={prices[0]:.4f}"
+
+    def test_call_monotone_decreasing(self):
+        strikes = np.array([85.0, 90.0, 95.0, 100.0, 105.0, 110.0, 115.0])
+        prices = stocha.heston_price(
+            strikes=strikes, is_call=[True]*7, **self.PARAMS,
+        )
+        for i in range(len(prices) - 1):
+            assert prices[i] >= prices[i+1], \
+                f"K={strikes[i]}: {prices[i]:.4f} < K={strikes[i+1]}: {prices[i+1]:.4f}"
+
+    def test_put_monotone_increasing(self):
+        strikes = np.array([85.0, 90.0, 95.0, 100.0, 105.0, 110.0, 115.0])
+        prices = stocha.heston_price(
+            strikes=strikes, is_call=[False]*7, **self.PARAMS,
+        )
+        for i in range(len(prices) - 1):
+            assert prices[i] <= prices[i+1], \
+                f"K={strikes[i]}: {prices[i]:.4f} > K={strikes[i+1]}: {prices[i+1]:.4f}"
+
+    def test_put_call_parity(self):
+        strikes = np.array([90.0, 100.0, 110.0])
+        calls = stocha.heston_price(
+            strikes=strikes, is_call=[True]*3, **self.PARAMS,
+        )
+        puts = stocha.heston_price(
+            strikes=strikes, is_call=[False]*3, **self.PARAMS,
+        )
+        s0 = self.PARAMS["s0"]
+        r = self.PARAMS["r"]
+        t = self.PARAMS["t"]
+        parity = calls - puts - s0 + strikes * np.exp(-r * t)
+        np.testing.assert_allclose(parity, 0.0, atol=1e-6)
+
+    def test_bs_limit(self):
+        """When xi→0 and rho=0, Heston→BS with sigma=sqrt(v0)."""
+        prices = stocha.heston_price(
+            strikes=np.array([100.0]), is_call=[True],
+            s0=100.0, v0=0.04, r=0.05,
+            kappa=2.0, theta=0.04, xi=1e-6, rho=0.0, t=1.0,
+            n_cos=256,
+        )
+        sigma = 0.2  # sqrt(0.04)
+        d1 = (math.log(100/100) + (0.05 + 0.5*sigma**2)) / sigma
+        d2 = d1 - sigma
+        ncdf = lambda x: 0.5*(1 + math.erf(x / math.sqrt(2)))
+        bs_call = 100*ncdf(d1) - 100*math.exp(-0.05)*ncdf(d2)
+        rel_err = abs(prices[0] - bs_call) / bs_call
+        assert rel_err < 1e-3, f"COS={prices[0]:.6f}, BS={bs_call:.6f}, err={rel_err:.2e}"
+
+    def test_positive_prices(self):
+        for k in [70.0, 80.0, 90.0, 100.0, 110.0, 120.0, 130.0]:
+            for call in [True, False]:
+                p = stocha.heston_price(
+                    strikes=np.array([k]), is_call=[call], **self.PARAMS,
+                )
+                assert p[0] >= 0, f"Negative price K={k} call={call}: {p[0]}"
+
+    def test_n_cos_convergence(self):
+        """Increasing N should converge."""
+        results = []
+        for n in [64, 128, 256]:
+            p = stocha.heston_price(
+                strikes=np.array([100.0]), is_call=[True],
+                **self.PARAMS, n_cos=n,
+            )
+            results.append(p[0])
+        # Difference between N=128 and N=256 should be much smaller
+        # than between N=64 and N=128.
+        diff_low = abs(results[1] - results[0])
+        diff_high = abs(results[2] - results[1])
+        assert diff_high < diff_low, \
+            f"Not converging: Δ(64,128)={diff_low:.2e}, Δ(128,256)={diff_high:.2e}"
+
+    def test_reproducibility(self):
+        kw = dict(strikes=np.array([100.0]), is_call=[True], **self.PARAMS)
+        np.testing.assert_array_equal(
+            stocha.heston_price(**kw), stocha.heston_price(**kw))
+
+    def test_invalid_v0(self):
+        with pytest.raises(ValueError):
+            stocha.heston_price(strikes=np.array([100.0]), is_call=[True],
+                                s0=100.0, v0=-0.01, r=0.05,
+                                kappa=2.0, theta=0.04, xi=0.3, rho=-0.7, t=1.0)
+
+    def test_invalid_rho(self):
+        with pytest.raises(ValueError):
+            stocha.heston_price(strikes=np.array([100.0]), is_call=[True],
+                                s0=100.0, v0=0.04, r=0.05,
+                                kappa=2.0, theta=0.04, xi=0.3, rho=-1.5, t=1.0)
+
+
+# ---------------------------------------------------------------------------
+# Heston Calibration
+# ---------------------------------------------------------------------------
+
+class TestHestonCalibrate:
+    """Tests for heston_calibrate (Projected LM with COS repricing)."""
+
+    def _synthetic(self, v0=0.04, kappa=2.0, theta=0.04, xi=0.3, rho=-0.7,
+                   s0=100.0, r=0.05, t=1.0, n_strikes=7):
+        strikes = np.linspace(85, 115, n_strikes)
+        is_call = [True] * n_strikes
+        prices = stocha.heston_price(
+            strikes=strikes, is_call=is_call,
+            s0=s0, v0=v0, r=r,
+            kappa=kappa, theta=theta, xi=xi, rho=rho, t=t,
+            n_cos=256,
+        )
+        return strikes, np.full(n_strikes, t), prices, is_call
+
+    def test_round_trip(self):
+        true = dict(v0=0.04, kappa=2.0, theta=0.04, xi=0.3, rho=-0.7)
+        strikes, mats, prices, is_call = self._synthetic(**true)
+        result = stocha.heston_calibrate(
+            strikes=strikes, maturities=mats,
+            market_prices=prices, is_call=is_call,
+            s0=100.0, r=0.05,
+        )
+        assert result["converged"]
+        assert result["rmse"] < 1e-4
+        for param, val in true.items():
+            assert abs(result[param] - val) / max(abs(val), 1e-6) < 0.05, \
+                f"{param}: {result[param]:.6f} vs {val}"
+
+    def test_high_vol_of_vol(self):
+        true = dict(v0=0.06, kappa=1.5, theta=0.06, xi=0.5, rho=-0.8)
+        strikes, mats, prices, is_call = self._synthetic(**true)
+        result = stocha.heston_calibrate(
+            strikes=strikes, maturities=mats,
+            market_prices=prices, is_call=is_call,
+            s0=100.0, r=0.05, max_iter=300,
+        )
+        assert result["rmse"] < 0.01
+        assert abs(result["rho"] - (-0.8)) < 0.1
+
+    def test_multi_maturity(self):
+        true = dict(v0=0.04, kappa=2.0, theta=0.04, xi=0.3, rho=-0.7)
+        s0, r = 100.0, 0.05
+        strikes = np.array([90, 95, 100, 105, 110, 90, 100, 110], dtype=float)
+        mats = np.array([0.5]*5 + [1.0]*3)
+        is_call = [True]*8
+        prices = []
+        for i in range(len(strikes)):
+            p = stocha.heston_price(
+                strikes=np.array([strikes[i]]), is_call=[True],
+                s0=s0, r=r, t=mats[i], n_cos=256, **true,
+            )
+            prices.append(p[0])
+        prices = np.array(prices)
+        result = stocha.heston_calibrate(
+            strikes=strikes, maturities=mats,
+            market_prices=prices, is_call=is_call,
+            s0=s0, r=r,
+        )
+        assert result["rmse"] < 0.01
+
+    def test_feller_flag(self):
+        # Params that violate Feller: 2*kappa*theta < xi^2
+        true = dict(v0=0.04, kappa=0.5, theta=0.04, xi=0.8, rho=-0.5)
+        strikes, mats, prices, is_call = self._synthetic(**true)
+        result = stocha.heston_calibrate(
+            strikes=strikes, maturities=mats,
+            market_prices=prices, is_call=is_call,
+            s0=100.0, r=0.05, max_iter=300,
+        )
+        assert not result["feller_satisfied"]
+
+    def test_length_mismatch(self):
+        with pytest.raises(ValueError):
+            stocha.heston_calibrate(
+                strikes=np.array([100.0, 105.0]),
+                maturities=np.array([1.0]),
+                market_prices=np.array([10.0, 8.0]),
+                is_call=[True, True],
+                s0=100.0, r=0.05,
+            )
+
+    def test_too_few_observations(self):
+        with pytest.raises(ValueError):
+            stocha.heston_calibrate(
+                strikes=np.array([100.0]),
+                maturities=np.array([1.0]),
+                market_prices=np.array([10.0]),
+                is_call=[True],
+                s0=100.0, r=0.05,
+            )
+
+    def test_deterministic(self):
+        strikes, mats, prices, is_call = self._synthetic()
+        r1 = stocha.heston_calibrate(
+            strikes=strikes, maturities=mats,
+            market_prices=prices, is_call=is_call,
+            s0=100.0, r=0.05,
+        )
+        r2 = stocha.heston_calibrate(
+            strikes=strikes, maturities=mats,
+            market_prices=prices, is_call=is_call,
+            s0=100.0, r=0.05,
+        )
+        assert r1 == r2
