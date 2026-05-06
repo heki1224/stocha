@@ -253,7 +253,11 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v1.3** ✅ | Multi-asset correlated simulation |
 | **v1.4** ✅ | Greeks (bump-and-revalue FD + pathwise IPA) |
 | **v1.5** ✅ | Heston calibration (COS method pricing + Projected LM) |
-| **v1.6** | DLPack zero-copy tensor interop |
+| **v1.6** | **Real-world Dynamics**: Dividends, Repo rates, and Local Volatility (Dupire) |
+| **v1.7** | **Exotic Options**: Barrier, Asian, and Lookback options |
+| **v1.8** | **Hybrid Models**: Heston-Hull-White (stochastic equity + interest rates) |
+| **v1.9** | **Advanced Sensitivities**: Likelihood Ratio Method (LRM) for discontinuous payoffs |
+| **v2.0** | **AI Ecosystem**: DLPack zero-copy interop (PyTorch/JAX) for Deep Hedging |
 
 ## License
 

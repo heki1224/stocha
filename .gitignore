@@ -34,3 +34,7 @@ sdist/
 # stocha dev artifacts
 .artifacts/
 tasks/
+
+# Agent context / external model guides
+.agent-context/
+GEMINI.md
