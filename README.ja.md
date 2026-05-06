@@ -213,13 +213,14 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `ssvi_implied_vol(log_moneyness, theta, t, eta, gamma, rho)` | SSVI 曲面からインプライド・ボラティリティを計算 |
 | `ssvi_local_vol(log_moneyness, theta_values, t_values, eta, gamma, rho)` | SSVI 解析微分による Dupire 局所ボラティリティ（有限差分不使用） |
 
-## パフォーマンス（Apple M シリーズ、リリースビルド）
+## パフォーマンス（Apple M4、リリースビルド）
 
-| 処理 | 速度 | NumPy 比 |
+| 処理 | 速度 | 比較対象 |
 |---|---|---|
-| 正規分布サンプリング（Ziggurat） | 約 300M サンプル/秒 | 1.0× |
-| GBM（252 ステップ、10 万パス） | 約 360M ステップ/秒 | 3.0× |
-| Halton（dim=4） | 約 106M サンプル/秒 | 2.9× |
+| 正規分布サンプリング（Ziggurat） | 約 300M サンプル/秒 | 1.0× vs NumPy |
+| GBM（252 ステップ、10 万パス） | 約 370M ステップ/秒 | 3.0× vs NumPy |
+| Halton（dim=4） | 約 105M サンプル/秒 | 2.9× vs SciPy |
+| Heston COS プライシング（100 ストライク） | 約 765K 価格/秒 | 31× vs QuantLib |
 
 ## チュートリアル
 

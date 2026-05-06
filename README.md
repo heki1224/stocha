@@ -213,13 +213,14 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `ssvi_implied_vol(log_moneyness, theta, t, eta, gamma, rho)` | Implied volatility from SSVI surface |
 | `ssvi_local_vol(log_moneyness, theta_values, t_values, eta, gamma, rho)` | Dupire local volatility via SSVI analytical derivatives (no finite differences) |
 
-## Performance (Apple M-series, release build)
+## Performance (Apple M4, release build)
 
-| Operation | Throughput | vs NumPy |
+| Operation | Throughput | vs baseline |
 |---|---|---|
-| Normal sampling (Ziggurat) | ~300M samples/sec | 1.0× |
-| GBM (252 steps, 100k paths) | ~360M steps/sec | 3.0× |
-| Halton (dim=4) | ~106M samples/sec | 2.9× |
+| Normal sampling (Ziggurat) | ~300M samples/sec | 1.0× vs NumPy |
+| GBM (252 steps, 100k paths) | ~370M steps/sec | 3.0× vs NumPy |
+| Halton (dim=4) | ~105M samples/sec | 2.9× vs SciPy |
+| Heston COS pricing (100 strikes) | ~765K prices/sec | 31× vs QuantLib |
 
 ## Tutorials
 
