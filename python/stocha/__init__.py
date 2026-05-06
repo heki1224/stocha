@@ -35,6 +35,9 @@ from stocha._stocha import greeks_fd as _greeks_fd
 from stocha._stocha import greeks_pathwise as _greeks_pathwise
 from stocha._stocha import heston_price as _heston_price
 from stocha._stocha import heston_calibrate as _heston_calibrate
+from stocha._stocha import ssvi_calibrate as _ssvi_calibrate
+from stocha._stocha import ssvi_implied_vol as _ssvi_implied_vol
+from stocha._stocha import ssvi_local_vol as _ssvi_local_vol
 from stocha._stocha import __version__
 
 __all__ = [
@@ -56,6 +59,9 @@ __all__ = [
     "greeks_pathwise",
     "heston_price",
     "heston_calibrate",
+    "ssvi_calibrate",
+    "ssvi_implied_vol",
+    "ssvi_local_vol",
     "__version__",
 ]
 
@@ -174,6 +180,7 @@ def gbm(
     n_paths: int,
     seed: int = 42,
     antithetic: bool = False,
+    q: float = 0.0,
 ) -> np.ndarray:
     """Simulate Geometric Brownian Motion (GBM) paths.
 
@@ -189,6 +196,8 @@ def gbm(
         n_paths:    Number of simulation paths to generate.
         seed:       Random seed for reproducibility (default ``42``).
         antithetic: If ``True``, use antithetic variates for variance reduction.
+        q:          Continuous dividend yield (default ``0.0``).
+                    Drift becomes ``(mu - q)``.
 
     Returns:
         NumPy array of shape ``(n_paths, steps + 1)``.
@@ -212,6 +221,7 @@ def gbm(
         n_paths=n_paths,
         seed=seed,
         antithetic=antithetic,
+        q=q,
     )
 
 
@@ -848,4 +858,117 @@ def heston_calibrate(
         np.asarray(market_prices, dtype=np.float64),
         list(is_call),
         s0=s0, r=r, max_iter=max_iter, tol=tol, n_cos=n_cos,
+    )
+
+
+def ssvi_calibrate(
+    log_moneyness: np.ndarray,
+    theta: np.ndarray,
+    market_total_var: np.ndarray,
+    max_iter: int = 200,
+    tol: float = 1e-10,
+) -> dict:
+    """SSVI曲面パラメータ (η, γ, ρ) を市場データにキャリブレーション。
+
+    SSVI (Surface SVI) は Gatheral & Jacquier のパラメトリック・
+    ボラティリティ曲面モデル。設計上カレンダー裁定フリーを保証。
+
+    Args:
+        log_moneyness: フォワード対数マネーネス k = ln(K/F) の1次元配列。
+        theta:         各データ点の ATM トータル分散 (σ_ATM² · T)。
+        market_total_var: 観測されたトータル・インプライド分散 (σ² · T)。
+        max_iter:      LM法の最大反復回数 (デフォルト 200)。
+        tol:           収束判定閾値 (デフォルト 1e-10)。
+
+    Returns:
+        ``eta``, ``gamma``, ``rho``, ``rmse``, ``iterations``,
+        ``converged`` を含む辞書。
+
+    Example:
+        >>> import numpy as np
+        >>> r = ssvi_calibrate(
+        ...     log_moneyness=np.array([-0.2, -0.1, 0.0, 0.1, 0.2]),
+        ...     theta=np.array([0.04]*5),
+        ...     market_total_var=np.array([0.05, 0.042, 0.04, 0.041, 0.048]))
+    """
+    return _ssvi_calibrate(
+        np.asarray(log_moneyness, dtype=np.float64),
+        np.asarray(theta, dtype=np.float64),
+        np.asarray(market_total_var, dtype=np.float64),
+        max_iter=max_iter, tol=tol,
+    )
+
+
+def ssvi_implied_vol(
+    log_moneyness: np.ndarray,
+    theta: float,
+    t: float,
+    eta: float,
+    gamma: float,
+    rho: float,
+) -> np.ndarray:
+    """SSVI曲面からインプライド・ボラティリティを計算。
+
+    Args:
+        log_moneyness: フォワード対数マネーネス k = ln(K/F) の1次元配列。
+        theta:         ATM トータル分散 (σ_ATM² · T)。
+        t:             満期までの時間 (年)。
+        eta:           SSVI η パラメータ。
+        gamma:         SSVI γ パラメータ。
+        rho:           SSVI ρ パラメータ。
+
+    Returns:
+        インプライド・ボラティリティの1次元 NumPy 配列。
+
+    Example:
+        >>> import numpy as np
+        >>> vols = ssvi_implied_vol(
+        ...     log_moneyness=np.linspace(-0.3, 0.3, 7),
+        ...     theta=0.04, t=1.0, eta=1.0, gamma=0.5, rho=-0.3)
+    """
+    return _ssvi_implied_vol(
+        np.asarray(log_moneyness, dtype=np.float64),
+        theta=theta, t=t, eta=eta, gamma=gamma, rho=rho,
+    )
+
+
+def ssvi_local_vol(
+    log_moneyness: np.ndarray,
+    theta_values: np.ndarray,
+    t_values: np.ndarray,
+    eta: float,
+    gamma: float,
+    rho: float,
+) -> np.ndarray:
+    """SSVI曲面から Dupire 局所ボラティリティを解析的に計算。
+
+    SSVI の閉形式偏微分を用いて Dupire 公式を適用。
+    数値微分を使わないため数値的に安定。
+
+    Args:
+        log_moneyness: フォワード対数マネーネスのグリッド (1次元配列)。
+        theta_values:  各スライスの ATM トータル分散 (T 昇順)。
+        t_values:      各スライスの満期 (T 昇順)。
+        eta:           SSVI η パラメータ。
+        gamma:         SSVI γ パラメータ。
+        rho:           SSVI ρ パラメータ。
+
+    Returns:
+        局所ボラティリティの2次元 NumPy 配列 (n_slices × n_strikes)。
+
+    Example:
+        >>> import numpy as np
+        >>> lv = ssvi_local_vol(
+        ...     log_moneyness=np.linspace(-0.3, 0.3, 50),
+        ...     theta_values=np.array([0.01, 0.02, 0.04, 0.06]),
+        ...     t_values=np.array([0.25, 0.5, 1.0, 1.5]),
+        ...     eta=1.0, gamma=0.5, rho=-0.3)
+        >>> lv.shape
+        (4, 50)
+    """
+    return _ssvi_local_vol(
+        np.asarray(log_moneyness, dtype=np.float64),
+        np.asarray(theta_values, dtype=np.float64),
+        np.asarray(t_values, dtype=np.float64),
+        eta=eta, gamma=gamma, rho=rho,
     )

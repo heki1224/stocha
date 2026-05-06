@@ -14,6 +14,9 @@ use finance::greeks::{
 };
 use finance::heston::{heston_paths_with_scheme, HestonParams, HestonScheme};
 use finance::heston_calibration::calibrate as heston_calibrate_core;
+use finance::svi::{
+    local_vol_surface, ssvi_calibrate as ssvi_calibrate_core, SsviParams, SsviSlice,
+};
 use finance::heston_cos::heston_cos_price_vec;
 use finance::hull_white::{hull_white_paths, HullWhiteParams};
 use finance::jump_diffusion::{merton_paths, MertonParams};
@@ -182,7 +185,7 @@ impl RNG {
 ///     NumPy array of shape (n_paths, steps + 1).
 ///     Column 0 is the initial price; column `steps` is the terminal price.
 #[pyfunction]
-#[pyo3(signature = (s0, mu, sigma, t, steps, n_paths, seed=42, antithetic=false))]
+#[pyo3(signature = (s0, mu, sigma, t, steps, n_paths, seed=42, antithetic=false, q=0.0))]
 fn gbm<'py>(
     py: Python<'py>,
     s0: f64,
@@ -193,6 +196,7 @@ fn gbm<'py>(
     n_paths: usize,
     seed: u64,
     antithetic: bool,
+    q: f64,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     if s0 <= 0.0 {
         return Err(pyo3::exceptions::PyValueError::new_err(
@@ -219,6 +223,7 @@ fn gbm<'py>(
         s0,
         mu,
         sigma,
+        q,
         t,
         steps,
         n_paths,
@@ -1396,6 +1401,128 @@ fn heston_calibrate<'py>(
     Ok(dict)
 }
 
+/// Calibrate SSVI surface parameters (η, γ, ρ) to market total variance data.
+///
+/// Args:
+///     log_moneyness: 1-D array of forward log-moneyness k = ln(K/F).
+///     theta:         1-D array of ATM total variance (σ_ATM² · T) for each point.
+///     market_total_var: 1-D array of observed total implied variance (σ² · T).
+///     max_iter:      Maximum LM iterations (default 200).
+///     tol:           Convergence tolerance (default 1e-10).
+///
+/// Returns:
+///     Dict with ``eta``, ``gamma``, ``rho``, ``rmse``, ``iterations``, ``converged``.
+#[pyfunction]
+#[pyo3(signature = (log_moneyness, theta, market_total_var, max_iter=200, tol=1e-10))]
+fn ssvi_calibrate<'py>(
+    py: Python<'py>,
+    log_moneyness: PyReadonlyArray1<'py, f64>,
+    theta: PyReadonlyArray1<'py, f64>,
+    market_total_var: PyReadonlyArray1<'py, f64>,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let k_vec: Vec<f64> = log_moneyness.as_array().iter().copied().collect();
+    let th_vec: Vec<f64> = theta.as_array().iter().copied().collect();
+    let w_vec: Vec<f64> = market_total_var.as_array().iter().copied().collect();
+
+    let result = py
+        .detach(|| ssvi_calibrate_core(&k_vec, &th_vec, &w_vec, max_iter, tol))
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+
+    let dict = PyDict::new(py);
+    dict.set_item("eta", result.eta)?;
+    dict.set_item("gamma", result.gamma)?;
+    dict.set_item("rho", result.rho)?;
+    dict.set_item("rmse", result.rmse)?;
+    dict.set_item("iterations", result.iterations)?;
+    dict.set_item("converged", result.converged)?;
+    Ok(dict)
+}
+
+/// Compute SSVI implied volatility for given strikes and slices.
+///
+/// Args:
+///     log_moneyness: 1-D array of forward log-moneyness k = ln(K/F).
+///     theta:         ATM total variance for this slice (scalar).
+///     t:             Time to expiry (scalar).
+///     eta:           SSVI η parameter.
+///     gamma:         SSVI γ parameter.
+///     rho:           SSVI ρ parameter.
+///
+/// Returns:
+///     1-D NumPy array of implied volatilities.
+#[pyfunction]
+fn ssvi_implied_vol<'py>(
+    py: Python<'py>,
+    log_moneyness: PyReadonlyArray1<'py, f64>,
+    theta: f64,
+    t: f64,
+    eta: f64,
+    gamma: f64,
+    rho: f64,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    if theta <= 0.0 || t <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "theta and t must be positive",
+        ));
+    }
+    let params = SsviParams { eta, gamma, rho };
+    let slice = SsviSlice { theta, t };
+    let k_vec: Vec<f64> = log_moneyness.as_array().iter().copied().collect();
+    let vols: Vec<f64> = k_vec.iter().map(|&k| params.implied_vol(k, &slice)).collect();
+    Ok(vols.into_pyarray(py))
+}
+
+/// Compute the Dupire local volatility surface from SSVI parameters.
+///
+/// Args:
+///     log_moneyness: 1-D array of forward log-moneyness grid.
+///     theta_values:  1-D array of ATM total variances (one per slice, sorted by T).
+///     t_values:      1-D array of times to expiry (sorted ascending).
+///     eta:           SSVI η parameter.
+///     gamma:         SSVI γ parameter.
+///     rho:           SSVI ρ parameter.
+///
+/// Returns:
+///     2-D NumPy array of shape (n_slices, n_strikes) with local volatilities.
+#[pyfunction]
+fn ssvi_local_vol<'py>(
+    py: Python<'py>,
+    log_moneyness: PyReadonlyArray1<'py, f64>,
+    theta_values: PyReadonlyArray1<'py, f64>,
+    t_values: PyReadonlyArray1<'py, f64>,
+    eta: f64,
+    gamma: f64,
+    rho: f64,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    let k_vec: Vec<f64> = log_moneyness.as_array().iter().copied().collect();
+    let th_vec: Vec<f64> = theta_values.as_array().iter().copied().collect();
+    let t_vec: Vec<f64> = t_values.as_array().iter().copied().collect();
+
+    if th_vec.len() != t_vec.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "theta_values and t_values must have the same length",
+        ));
+    }
+
+    let slices: Vec<SsviSlice> = th_vec
+        .iter()
+        .zip(t_vec.iter())
+        .map(|(&theta, &t)| SsviSlice { theta, t })
+        .collect();
+    let params = SsviParams { eta, gamma, rho };
+
+    let surface = py.detach(|| local_vol_surface(&params, &slices, &k_vec));
+
+    let n_rows = surface.len();
+    let n_cols = k_vec.len();
+    let flat: Vec<f64> = surface.into_iter().flatten().collect();
+    let arr = Array2::from_shape_vec([n_rows, n_cols], flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    into_py_array2(arr, py)
+}
+
 /// stocha: High-performance random number and financial simulation library.
 #[pymodule]
 fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -1417,6 +1544,9 @@ fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(greeks_pathwise, m)?)?;
     m.add_function(wrap_pyfunction!(heston_price, m)?)?;
     m.add_function(wrap_pyfunction!(heston_calibrate, m)?)?;
-    m.add("__version__", "1.5.0")?;
+    m.add_function(wrap_pyfunction!(ssvi_calibrate, m)?)?;
+    m.add_function(wrap_pyfunction!(ssvi_implied_vol, m)?)?;
+    m.add_function(wrap_pyfunction!(ssvi_local_vol, m)?)?;
+    m.add("__version__", "1.6.0")?;
     Ok(())
 }

@@ -12,6 +12,8 @@ pub struct GbmParams {
     pub mu: f64,
     /// Volatility (annualized).
     pub sigma: f64,
+    /// Continuous dividend yield (annualized). Drift becomes (mu - q).
+    pub q: f64,
     /// Time to maturity in years.
     pub t: f64,
     /// Number of time steps.
@@ -39,7 +41,7 @@ pub struct GbmParams {
 /// Column 0 is the initial price `s0`; column `steps` is the terminal price.
 pub fn gbm_paths(params: &GbmParams, seed: u128) -> Array2<f64> {
     let dt = params.t / params.steps as f64;
-    let drift = (params.mu - 0.5 * params.sigma * params.sigma) * dt;
+    let drift = (params.mu - params.q - 0.5 * params.sigma * params.sigma) * dt;
     let diffusion = params.sigma * dt.sqrt();
 
     // When using antithetic variates, generate half the paths then mirror them.
@@ -113,6 +115,7 @@ mod tests {
             s0: 100.0,
             mu: 0.05,
             sigma: 0.2,
+            q: 0.0,
             t: 1.0,
             steps: 252,
             n_paths: 1000,

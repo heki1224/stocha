@@ -11,3 +11,4 @@ pub mod lsmc;
 pub mod multi_gbm;
 pub mod sabr;
 pub mod sabr_calibration;
+pub mod svi;

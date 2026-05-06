@@ -209,6 +209,9 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `greeks_pathwise(s0, r, sigma, t, strike, is_call, n_paths, n_steps, greeks)` | MC Greeks via pathwise IPA (GBM only; delta, vega) |
 | `heston_price(strikes, is_call, s0, v0, r, kappa, theta, xi, rho, t, n_cos)` | Heston analytical pricing via COS method (Fang & Oosterlee 2008) |
 | `heston_calibrate(strikes, maturities, market_prices, is_call, s0, r, ...)` | Calibrate Heston `(v0, κ, θ, ξ, ρ)` to market prices (Projected LM + Vega-weighted COS repricing) |
+| `ssvi_calibrate(log_moneyness, theta, market_total_var, ...)` | Calibrate SSVI surface `(η, γ, ρ)` — calendar-arbitrage-free by construction |
+| `ssvi_implied_vol(log_moneyness, theta, t, eta, gamma, rho)` | Implied volatility from SSVI surface |
+| `ssvi_local_vol(log_moneyness, theta_values, t_values, eta, gamma, rho)` | Dupire local volatility via SSVI analytical derivatives (no finite differences) |
 
 ## Performance (Apple M-series, release build)
 
@@ -231,6 +234,7 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `examples/07_american_option.py` | LSMC American option pricing, early exercise premium |
 | `examples/08_multi_asset.py` | Multi-asset correlated GBM, portfolio VaR, correlation verification |
 | `examples/09_heston_calibration.py` | Heston COS pricing, implied vol smile, single/multi-maturity calibration |
+| `examples/10_local_vol.py` | SSVI surface, Dupire local vol, continuous dividends |
 
 Each example has a Japanese counterpart (`*.ja.py`).
 
@@ -253,7 +257,7 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v1.3** ✅ | Multi-asset correlated simulation |
 | **v1.4** ✅ | Greeks (bump-and-revalue FD + pathwise IPA) |
 | **v1.5** ✅ | Heston calibration (COS method pricing + Projected LM) |
-| **v1.6** | **Real-world Dynamics**: Dividends, Repo rates, and Local Volatility (Dupire) |
+| **v1.6** ✅ | **Local Volatility**: SSVI surface, Dupire local vol (analytical), continuous dividends |
 | **v1.7** | **Exotic Options**: Barrier, Asian, and Lookback options |
 | **v1.8** | **Hybrid Models**: Heston-Hull-White (stochastic equity + interest rates) |
 | **v1.9** | **Advanced Sensitivities**: Likelihood Ratio Method (LRM) for discontinuous payoffs |

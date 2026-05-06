@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-06
+
+### Added
+
+- **`ssvi_calibrate`**: Fit SSVI (Surface SVI) parameters `(η, γ, ρ)` to
+  observed total implied variance data. Uses Projected Levenberg-Marquardt
+  with analytical Jacobian. The SSVI parameterization (Gatheral & Jacquier)
+  guarantees calendar-arbitrage-free surfaces by construction.
+- **`ssvi_implied_vol`**: Compute implied volatilities from calibrated SSVI
+  parameters for arbitrary strikes and maturities.
+- **`ssvi_local_vol`**: Compute the Dupire local volatility surface from SSVI
+  parameters using closed-form partial derivatives (∂w/∂k, ∂²w/∂k², ∂w/∂θ).
+  No numerical finite differences — numerically stable even in the tails.
+- **Continuous dividend yield (`q`)**: Added to `gbm()` and `bs_price_div()`.
+  Drift becomes `(μ - q)` in GBM; Black-Scholes uses discounted spot
+  `S·exp(-qT)`. Backward compatible (default `q=0`).
+
 ## [1.5.0] - 2026-05-01
 
 ### Added

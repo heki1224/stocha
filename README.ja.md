@@ -209,6 +209,9 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `greeks_pathwise(s0, r, sigma, t, strike, is_call, n_paths, n_steps, greeks)` | Pathwise IPA によるMCグリークス（GBM 限定; delta, vega） |
 | `heston_price(strikes, is_call, s0, v0, r, kappa, theta, xi, rho, t, n_cos)` | COS 法による Heston 解析プライシング（Fang & Oosterlee 2008） |
 | `heston_calibrate(strikes, maturities, market_prices, is_call, s0, r, ...)` | Heston `(v0, κ, θ, ξ, ρ)` のキャリブレーション（射影 LM + Vega 加重 COS 再評価） |
+| `ssvi_calibrate(log_moneyness, theta, market_total_var, ...)` | SSVI 曲面 `(η, γ, ρ)` のキャリブレーション — 設計上カレンダー裁定フリー |
+| `ssvi_implied_vol(log_moneyness, theta, t, eta, gamma, rho)` | SSVI 曲面からインプライド・ボラティリティを計算 |
+| `ssvi_local_vol(log_moneyness, theta_values, t_values, eta, gamma, rho)` | SSVI 解析微分による Dupire 局所ボラティリティ（有限差分不使用） |
 
 ## パフォーマンス（Apple M シリーズ、リリースビルド）
 
@@ -231,6 +234,7 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `examples/07_american_option.ja.py` | LSMC アメリカンオプション・早期行使プレミアム |
 | `examples/08_multi_asset.ja.py` | マルチアセット相関 GBM・ポートフォリオ VaR・相関検証 |
 | `examples/09_heston_calibration.ja.py` | Heston COS 法プライシング・IV スマイル・単一/マルチ満期キャリブレーション |
+| `examples/10_local_vol.ja.py` | SSVI 曲面・Dupire 局所ボラ・連続配当利回り |
 
 ## 対象ユーザー
 
@@ -251,7 +255,7 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | **v1.3** ✅ | マルチアセット相関シミュレーション |
 | **v1.4** ✅ | グリークス（バンピング有限差分 + Pathwise IPA） |
 | **v1.5** ✅ | Heston キャリブレーション（COS 法プライシング + 射影 LM） |
-| **v1.6** | **実務対応の深化**: 配当、レポ金利、局所ボラティリティ（Dupire 公式） |
+| **v1.6** ✅ | **局所ボラティリティ**: SSVI 曲面、Dupire 局所ボラ（解析微分）、連続配当 |
 | **v1.7** | **エキゾチック・オプション**: バリア、アジア、ルックバック・オプション |
 | **v1.8** | **ハイブリッド・モデル**: Heston-Hull-White（株価＋金利の同時確率化） |
 | **v1.9** | **高度な感応度**: 尤度比法（LRM）による不連続ペイオフのグリークス計算 |

@@ -25,19 +25,28 @@ fn erf(x: f64) -> f64 {
 }
 
 pub fn bs_price(s: f64, k: f64, r: f64, t: f64, sigma: f64, is_call: bool) -> f64 {
-    let d1 = ((s / k).ln() + (r + 0.5 * sigma * sigma) * t) / (sigma * t.sqrt());
+    bs_price_div(s, k, r, 0.0, t, sigma, is_call)
+}
+
+pub fn bs_price_div(s: f64, k: f64, r: f64, q: f64, t: f64, sigma: f64, is_call: bool) -> f64 {
+    let d1 = ((s / k).ln() + (r - q + 0.5 * sigma * sigma) * t) / (sigma * t.sqrt());
     let d2 = d1 - sigma * t.sqrt();
     let df = (-r * t).exp();
+    let qf = (-q * t).exp();
     if is_call {
-        s * norm_cdf(d1) - k * df * norm_cdf(d2)
+        s * qf * norm_cdf(d1) - k * df * norm_cdf(d2)
     } else {
-        k * df * norm_cdf(-d2) - s * norm_cdf(-d1)
+        k * df * norm_cdf(-d2) - s * qf * norm_cdf(-d1)
     }
 }
 
 pub fn bs_vega(s: f64, k: f64, r: f64, t: f64, sigma: f64) -> f64 {
-    let d1 = ((s / k).ln() + (r + 0.5 * sigma * sigma) * t) / (sigma * t.sqrt());
-    s * norm_pdf(d1) * t.sqrt()
+    bs_vega_div(s, k, r, 0.0, t, sigma)
+}
+
+pub fn bs_vega_div(s: f64, k: f64, r: f64, q: f64, t: f64, sigma: f64) -> f64 {
+    let d1 = ((s / k).ln() + (r - q + 0.5 * sigma * sigma) * t) / (sigma * t.sqrt());
+    s * (-q * t).exp() * norm_pdf(d1) * t.sqrt()
 }
 
 #[cfg(test)]
@@ -61,6 +70,20 @@ mod tests {
     fn test_bs_vega_positive() {
         let v = bs_vega(100.0, 100.0, 0.05, 1.0, 0.2);
         assert!(v > 0.0);
+    }
+
+    #[test]
+    fn test_put_call_parity_with_dividend() {
+        let s = 100.0;
+        let k = 100.0;
+        let r = 0.05;
+        let q = 0.03;
+        let t = 1.0;
+        let sigma = 0.2;
+        let call = bs_price_div(s, k, r, q, t, sigma, true);
+        let put = bs_price_div(s, k, r, q, t, sigma, false);
+        let parity = call - put - s * (-q * t).exp() + k * (-r * t).exp();
+        assert!(parity.abs() < 1e-10);
     }
 
     #[test]

@@ -102,6 +102,7 @@ impl ModelSpec {
                     s0: *s0,
                     mu: *mu,
                     sigma: *sigma,
+                    q: 0.0,
                     t: *t,
                     steps: *steps,
                     n_paths: *n_paths,

@@ -30,6 +30,7 @@ pub fn lsmc_american_option(params: &LsmcParams, seed: u128) -> (f64, f64) {
         s0: params.s0,
         mu: params.r,
         sigma: params.sigma,
+        q: 0.0,
         t: params.t,
         steps: params.steps,
         n_paths: params.n_paths,
