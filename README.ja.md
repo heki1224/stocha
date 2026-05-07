@@ -15,7 +15,7 @@
 - **リスク指標**: VaR・CVaR（Expected Shortfall）
 - **コピュラ**: ガウスコピュラ・Student-t コピュラ（多変量依存構造モデリング）
 - **ボラティリティ**: SABR インプライドボラティリティ（Hagan 2002、マイナス金利対応）
-- **オプション価格付け**: Longstaff-Schwartz LSMC（アメリカンオプション）
+- **オプション価格付け**: Longstaff-Schwartz LSMC（アメリカンオプション）; バリア・アジア・ルックバック（解析解 + MC）
 - **グリークス**: バンピング有限差分（全モデル） + Pathwise IPA（GBM）
 - **キャリブレーション**: SABR（射影 LM）・Heston（COS 法 + 射影 LM）
 - **並列処理**: Rayon によるパス生成の並列化
@@ -168,6 +168,21 @@ pw = stocha.greeks_pathwise(
     greeks=["delta", "vega"],
 )
 print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
+
+# ── バリアオプション ─────────────────────────────────────────────────────
+bp = stocha.barrier_price(
+    s=100.0, k=100.0, r=0.05, sigma=0.2, t=1.0,
+    barrier=120.0, barrier_type="up-and-out",
+)
+print(f"アップ・アンド・アウト・コール: {bp:.4f}")
+
+# ── アジアンオプション（算術平均） ───────────────────────────────────────
+ap = stocha.asian_price(s=100.0, k=100.0, r=0.05, sigma=0.2, t=1.0)
+print(f"アジアン算術コール: {ap:.4f}")
+
+# ── ルックバックオプション（浮動ストライク） ─────────────────────────────
+lp = stocha.lookback_price(s=100.0, r=0.05, sigma=0.2, t=1.0)
+print(f"ルックバック浮動コール: {lp:.4f}")
 ```
 
 ## API リファレンス
@@ -212,6 +227,9 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `ssvi_calibrate(log_moneyness, theta, market_total_var, ...)` | SSVI 曲面 `(η, γ, ρ)` のキャリブレーション — 設計上カレンダー裁定フリー |
 | `ssvi_implied_vol(log_moneyness, theta, t, eta, gamma, rho)` | SSVI 曲面からインプライド・ボラティリティを計算 |
 | `ssvi_local_vol(log_moneyness, theta_values, t_values, eta, gamma, rho)` | SSVI 解析微分による Dupire 局所ボラティリティ（有限差分不使用） |
+| `barrier_price(s, k, r, sigma, t, barrier, barrier_type, ...)` | バリアオプション: Reiner-Rubinstein 解析解（8型）+ MC フォールバック |
+| `asian_price(s, k, r, sigma, t, n_steps, average_type, ...)` | アジアンオプション: Kemna-Vorst 解析解（幾何平均）+ MC（算術平均、幾何 CV） |
+| `lookback_price(s, r, sigma, t, n_steps, strike_type, ...)` | ルックバックオプション: Goldman-Sosin-Gatto / Conze-Viswanathan 解析解 + MC |
 
 ## パフォーマンス（Apple M4、リリースビルド）
 
@@ -236,6 +254,7 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `examples/08_multi_asset.ja.py` | マルチアセット相関 GBM・ポートフォリオ VaR・相関検証 |
 | `examples/09_heston_calibration.ja.py` | Heston COS 法プライシング・IV スマイル・単一/マルチ満期キャリブレーション |
 | `examples/10_local_vol.ja.py` | SSVI 曲面・Dupire 局所ボラ・連続配当利回り |
+| `examples/11_exotic_options.ja.py` | バリア・アジア・ルックバックオプションの価格計算 |
 
 ## 対象ユーザー
 
@@ -257,7 +276,8 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | **v1.4** ✅ | グリークス（バンピング有限差分 + Pathwise IPA） |
 | **v1.5** ✅ | Heston キャリブレーション（COS 法プライシング + 射影 LM） |
 | **v1.6** ✅ | **局所ボラティリティ**: SSVI 曲面、Dupire 局所ボラ（解析微分）、連続配当 |
-| **v1.7** | **エキゾチック・オプション**: バリア、アジア、ルックバック・オプション |
+| **v1.7** ✅ | **エキゾチック・オプション**: バリア（Reiner-Rubinstein）、アジア（Kemna-Vorst + MC/CV）、ルックバック（Goldman-Sosin-Gatto） |
+| **v1.7.1** | **エキゾチック拡張**: リベート、期中評価（経過平均/現在極値）、Broadie-Glasserman-Kou 離散監視補正 |
 | **v1.8** | **ハイブリッド・モデル**: Heston-Hull-White（株価＋金利の同時確率化） |
 | **v1.9** | **高度な感応度**: 尤度比法（LRM）による不連続ペイオフのグリークス計算 |
 | **v2.0** | **AI エコシステム**: DLPack ゼロコピー連携（PyTorch/JAX）による Deep Hedging 対応 |

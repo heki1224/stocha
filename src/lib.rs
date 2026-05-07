@@ -14,6 +14,24 @@ use finance::greeks::{
 };
 use finance::heston::{heston_paths_with_scheme, HestonParams, HestonScheme};
 use finance::heston_calibration::calibrate as heston_calibrate_core;
+use finance::asian::{
+    asian_geometric_fixed_analytical, asian_mc,
+    AsianParams,
+    AverageType as AsianAverageType,
+    OptionType as AsianOptionType,
+    StrikeType as AsianStrikeType,
+};
+use finance::barrier::{
+    barrier_analytical, barrier_mc,
+    BarrierDirection, BarrierKind, BarrierParams,
+    OptionType as BarrierOptionType,
+};
+use finance::lookback::{
+    lookback_fixed_analytical, lookback_floating_analytical, lookback_mc,
+    LookbackParams,
+    OptionType as LookbackOptionType,
+    StrikeType as LookbackStrikeType,
+};
 use finance::svi::{
     local_vol_surface, ssvi_calibrate as ssvi_calibrate_core, SsviParams, SsviSlice,
 };
@@ -1523,6 +1541,303 @@ fn ssvi_local_vol<'py>(
     into_py_array2(arr, py)
 }
 
+/// Price a barrier option (analytical or Monte Carlo).
+///
+/// Supports 8 barrier types: {up,down} × {in,out} × {call,put}.
+/// method="auto" uses the Reiner-Rubinstein analytical formula when possible,
+/// falling back to Monte Carlo for edge cases.
+#[pyfunction]
+#[pyo3(signature = (s, k, r, sigma, t, barrier, barrier_type="up-and-out", option_type="call", q=0.0, n_paths=100_000, n_steps=252, seed=42, method="auto"))]
+fn barrier_price<'py>(
+    py: Python<'py>,
+    s: f64,
+    k: f64,
+    r: f64,
+    sigma: f64,
+    t: f64,
+    barrier: f64,
+    barrier_type: &str,
+    option_type: &str,
+    q: f64,
+    n_paths: usize,
+    n_steps: usize,
+    seed: u64,
+    method: &str,
+) -> PyResult<f64> {
+    if s <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("s must be positive"));
+    }
+    if k <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("k must be positive"));
+    }
+    if sigma <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("sigma must be positive"));
+    }
+    if t <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+    }
+    if barrier <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("barrier must be positive"));
+    }
+
+    let (direction, kind) = match barrier_type {
+        "up-and-out" | "uo" => (BarrierDirection::Up, BarrierKind::Out),
+        "up-and-in" | "ui" => (BarrierDirection::Up, BarrierKind::In),
+        "down-and-out" | "do" => (BarrierDirection::Down, BarrierKind::Out),
+        "down-and-in" | "di" => (BarrierDirection::Down, BarrierKind::In),
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown barrier_type: '{}'. Supported: 'up-and-out', 'up-and-in', 'down-and-out', 'down-and-in'",
+                other
+            )))
+        }
+    };
+
+    let opt = match option_type {
+        "call" => BarrierOptionType::Call,
+        "put" => BarrierOptionType::Put,
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown option_type: '{}'. Supported: 'call', 'put'",
+                other
+            )))
+        }
+    };
+
+    let params = BarrierParams {
+        s, k, r, q, sigma, t, barrier,
+        direction, kind, option_type: opt,
+    };
+
+    let price = match method {
+        "auto" | "analytical" => {
+            match barrier_analytical(&params) {
+                Some(p) if method == "analytical" || p.is_finite() => p,
+                _ if method == "analytical" => {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "Analytical solution not available for these parameters"
+                    ));
+                }
+                _ => py.detach(|| barrier_mc(&params, n_paths, n_steps, seed as u128)),
+            }
+        }
+        "mc" => py.detach(|| barrier_mc(&params, n_paths, n_steps, seed as u128)),
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown method: '{}'. Supported: 'auto', 'analytical', 'mc'",
+                other
+            )))
+        }
+    };
+
+    Ok(price)
+}
+
+/// Price an Asian option (analytical or Monte Carlo).
+///
+/// Geometric average with fixed strike uses the Kemna-Vorst closed-form.
+/// Arithmetic average uses Monte Carlo with geometric control variate.
+#[pyfunction]
+#[pyo3(signature = (s, k, r, sigma, t, n_steps=252, average_type="arithmetic", strike_type="fixed", option_type="call", q=0.0, n_paths=100_000, seed=42, method="auto"))]
+fn asian_price<'py>(
+    py: Python<'py>,
+    s: f64,
+    k: f64,
+    r: f64,
+    sigma: f64,
+    t: f64,
+    n_steps: usize,
+    average_type: &str,
+    strike_type: &str,
+    option_type: &str,
+    q: f64,
+    n_paths: usize,
+    seed: u64,
+    method: &str,
+) -> PyResult<f64> {
+    if s <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("s must be positive"));
+    }
+    if k <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("k must be positive"));
+    }
+    if sigma <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("sigma must be positive"));
+    }
+    if t <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+    }
+
+    let avg = match average_type {
+        "arithmetic" => AsianAverageType::Arithmetic,
+        "geometric" => AsianAverageType::Geometric,
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown average_type: '{}'. Supported: 'arithmetic', 'geometric'",
+                other
+            )))
+        }
+    };
+
+    let strike = match strike_type {
+        "fixed" => AsianStrikeType::Fixed,
+        "floating" => AsianStrikeType::Floating,
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown strike_type: '{}'. Supported: 'fixed', 'floating'",
+                other
+            )))
+        }
+    };
+
+    let opt = match option_type {
+        "call" => AsianOptionType::Call,
+        "put" => AsianOptionType::Put,
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown option_type: '{}'. Supported: 'call', 'put'",
+                other
+            )))
+        }
+    };
+
+    let params = AsianParams {
+        s, k, r, q, sigma, t, n_steps,
+        average_type: avg, strike_type: strike, option_type: opt,
+    };
+
+    let has_analytical = avg == AsianAverageType::Geometric && strike == AsianStrikeType::Fixed;
+
+    let price = match method {
+        "auto" => {
+            if has_analytical {
+                asian_geometric_fixed_analytical(&params).unwrap_or_else(|| {
+                    py.detach(|| asian_mc(&params, n_paths, seed as u128))
+                })
+            } else {
+                py.detach(|| asian_mc(&params, n_paths, seed as u128))
+            }
+        }
+        "analytical" => {
+            if has_analytical {
+                asian_geometric_fixed_analytical(&params).ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err(
+                        "Analytical solution not available for these parameters"
+                    )
+                })?
+            } else {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "Analytical solution only available for geometric average with fixed strike"
+                ));
+            }
+        }
+        "mc" => py.detach(|| asian_mc(&params, n_paths, seed as u128)),
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown method: '{}'. Supported: 'auto', 'analytical', 'mc'",
+                other
+            )))
+        }
+    };
+
+    Ok(price)
+}
+
+/// Price a lookback option (analytical or Monte Carlo).
+///
+/// Floating strike uses Goldman-Sosin-Gatto; fixed strike uses
+/// Conze-Viswanathan. Both assume continuous monitoring.
+/// MC uses discrete monitoring (path max/min tracking).
+#[pyfunction]
+#[pyo3(signature = (s, r, sigma, t, n_steps=252, strike_type="floating", option_type="call", k=0.0, q=0.0, n_paths=100_000, seed=42, method="auto"))]
+fn lookback_price<'py>(
+    py: Python<'py>,
+    s: f64,
+    r: f64,
+    sigma: f64,
+    t: f64,
+    n_steps: usize,
+    strike_type: &str,
+    option_type: &str,
+    k: f64,
+    q: f64,
+    n_paths: usize,
+    seed: u64,
+    method: &str,
+) -> PyResult<f64> {
+    if s <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("s must be positive"));
+    }
+    if sigma <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("sigma must be positive"));
+    }
+    if t <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("t must be positive"));
+    }
+
+    let st = match strike_type {
+        "floating" => LookbackStrikeType::Floating,
+        "fixed" => {
+            if k <= 0.0 {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "k must be positive for fixed strike lookback"
+                ));
+            }
+            LookbackStrikeType::Fixed
+        }
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown strike_type: '{}'. Supported: 'floating', 'fixed'",
+                other
+            )))
+        }
+    };
+
+    let opt = match option_type {
+        "call" => LookbackOptionType::Call,
+        "put" => LookbackOptionType::Put,
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown option_type: '{}'. Supported: 'call', 'put'",
+                other
+            )))
+        }
+    };
+
+    let params = LookbackParams {
+        s, k, r, q, sigma, t, n_steps,
+        strike_type: st, option_type: opt,
+    };
+
+    let analytical_fn = match st {
+        LookbackStrikeType::Floating => lookback_floating_analytical,
+        LookbackStrikeType::Fixed => lookback_fixed_analytical,
+    };
+
+    let price = match method {
+        "auto" | "analytical" => {
+            match analytical_fn(&params) {
+                Some(p) if p.is_finite() => p,
+                _ if method == "analytical" => {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "Analytical solution not available for these parameters"
+                    ));
+                }
+                _ => py.detach(|| lookback_mc(&params, n_paths, seed as u128)),
+            }
+        }
+        "mc" => py.detach(|| lookback_mc(&params, n_paths, seed as u128)),
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown method: '{}'. Supported: 'auto', 'analytical', 'mc'",
+                other
+            )))
+        }
+    };
+
+    Ok(price)
+}
+
 /// stocha: High-performance random number and financial simulation library.
 #[pymodule]
 fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -1547,6 +1862,9 @@ fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ssvi_calibrate, m)?)?;
     m.add_function(wrap_pyfunction!(ssvi_implied_vol, m)?)?;
     m.add_function(wrap_pyfunction!(ssvi_local_vol, m)?)?;
-    m.add("__version__", "1.6.0")?;
+    m.add_function(wrap_pyfunction!(barrier_price, m)?)?;
+    m.add_function(wrap_pyfunction!(asian_price, m)?)?;
+    m.add_function(wrap_pyfunction!(lookback_price, m)?)?;
+    m.add("__version__", "1.7.0")?;
     Ok(())
 }

@@ -15,7 +15,7 @@
 - **Risk metrics**: VaR and CVaR (Expected Shortfall)
 - **Copulas**: Gaussian and Student-t copulas for multivariate dependence
 - **Volatility**: SABR implied volatility (Hagan 2002) with negative-rate support
-- **Option pricing**: Longstaff-Schwartz LSMC for American options
+- **Option pricing**: Longstaff-Schwartz LSMC for American options; Barrier, Asian, and Lookback exotics (analytical + MC)
 - **Greeks**: Bump-and-revalue finite difference (all models) + pathwise IPA (GBM)
 - **Calibration**: SABR (Projected LM) and Heston (COS method + Projected LM)
 - **Parallel**: Rayon-powered path generation
@@ -168,6 +168,21 @@ pw = stocha.greeks_pathwise(
     greeks=["delta", "vega"],
 )
 print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
+
+# ── Barrier option ──────────────────────────────────────────────────────
+bp = stocha.barrier_price(
+    s=100.0, k=100.0, r=0.05, sigma=0.2, t=1.0,
+    barrier=120.0, barrier_type="up-and-out",
+)
+print(f"Up-and-out call: {bp:.4f}")
+
+# ── Asian option (arithmetic average) ────────────────────────────────────
+ap = stocha.asian_price(s=100.0, k=100.0, r=0.05, sigma=0.2, t=1.0)
+print(f"Asian arithmetic call: {ap:.4f}")
+
+# ── Lookback option (floating strike) ────────────────────────────────────
+lp = stocha.lookback_price(s=100.0, r=0.05, sigma=0.2, t=1.0)
+print(f"Lookback floating call: {lp:.4f}")
 ```
 
 ## API Reference
@@ -212,6 +227,9 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `ssvi_calibrate(log_moneyness, theta, market_total_var, ...)` | Calibrate SSVI surface `(η, γ, ρ)` — calendar-arbitrage-free by construction |
 | `ssvi_implied_vol(log_moneyness, theta, t, eta, gamma, rho)` | Implied volatility from SSVI surface |
 | `ssvi_local_vol(log_moneyness, theta_values, t_values, eta, gamma, rho)` | Dupire local volatility via SSVI analytical derivatives (no finite differences) |
+| `barrier_price(s, k, r, sigma, t, barrier, barrier_type, ...)` | Barrier option pricing: Reiner-Rubinstein analytical (8 types) + MC fallback |
+| `asian_price(s, k, r, sigma, t, n_steps, average_type, ...)` | Asian option pricing: Kemna-Vorst analytical (geometric) + MC with geometric CV (arithmetic) |
+| `lookback_price(s, r, sigma, t, n_steps, strike_type, ...)` | Lookback option pricing: Goldman-Sosin-Gatto / Conze-Viswanathan analytical + MC |
 
 ## Performance (Apple M4, release build)
 
@@ -236,6 +254,7 @@ print(f"Pathwise Delta={pw['delta']:.4f}  Vega={pw['vega']:.2f}")
 | `examples/08_multi_asset.py` | Multi-asset correlated GBM, portfolio VaR, correlation verification |
 | `examples/09_heston_calibration.py` | Heston COS pricing, implied vol smile, single/multi-maturity calibration |
 | `examples/10_local_vol.py` | SSVI surface, Dupire local vol, continuous dividends |
+| `examples/11_exotic_options.py` | Barrier, Asian, and Lookback option pricing |
 
 Each example has a Japanese counterpart (`*.ja.py`).
 
@@ -259,7 +278,8 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v1.4** ✅ | Greeks (bump-and-revalue FD + pathwise IPA) |
 | **v1.5** ✅ | Heston calibration (COS method pricing + Projected LM) |
 | **v1.6** ✅ | **Local Volatility**: SSVI surface, Dupire local vol (analytical), continuous dividends |
-| **v1.7** | **Exotic Options**: Barrier, Asian, and Lookback options |
+| **v1.7** ✅ | **Exotic Options**: Barrier (Reiner-Rubinstein), Asian (Kemna-Vorst + MC/CV), Lookback (Goldman-Sosin-Gatto) |
+| **v1.7.1** | **Exotic Enhancements**: Rebate, seasoning (running avg / current extreme), Broadie-Glasserman-Kou discrete monitoring correction |
 | **v1.8** | **Hybrid Models**: Heston-Hull-White (stochastic equity + interest rates) |
 | **v1.9** | **Advanced Sensitivities**: Likelihood Ratio Method (LRM) for discontinuous payoffs |
 | **v2.0** | **AI Ecosystem**: DLPack zero-copy interop (PyTorch/JAX) for Deep Hedging |

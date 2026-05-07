@@ -12,3 +12,7 @@ pub mod multi_gbm;
 pub mod sabr;
 pub mod sabr_calibration;
 pub mod svi;
+
+pub mod asian;
+pub mod barrier;
+pub mod lookback;

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-05-07
+
+### Added
+
+- **`barrier_price`**: Price barrier options (up/down × in/out × call/put = 8 types).
+  Reiner-Rubinstein analytical formula for continuous monitoring under GBM.
+  Monte Carlo fallback with discrete monitoring. Supports `method="auto"`,
+  `"analytical"`, or `"mc"`. Short aliases accepted (`"uo"`, `"ui"`, `"do"`, `"di"`).
+  Continuous dividend yield (`q`) supported.
+- **`asian_price`**: Price Asian (average) options with arithmetic or geometric
+  averaging, fixed or floating strike. Kemna-Vorst closed-form for geometric
+  average with fixed strike. Arithmetic average uses Monte Carlo with the
+  geometric price as a control variate for variance reduction.
+- **`lookback_price`**: Price lookback options with floating or fixed strike.
+  Goldman-Sosin-Gatto analytical formula for floating strike (continuous
+  monitoring). Conze-Viswanathan formula for fixed strike. Monte Carlo
+  with discrete monitoring (path max/min tracking). All functions support
+  continuous dividend yield (`q`).
+- **Tutorial 11** (`examples/11_exotic_options.py`): Barrier, Asian, and
+  Lookback option pricing with analytical vs MC comparison.
+
 ## [1.6.0] - 2026-05-06
 
 ### Added
@@ -247,6 +268,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `gbm(n_paths=100k, steps=252)` | ~680k paths/sec |
 
 [Unreleased]: https://github.com/heki1224/stocha/compare/v1.6.0...HEAD
+[1.7.0]: https://github.com/heki1224/stocha/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/heki1224/stocha/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/heki1224/stocha/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/heki1224/stocha/compare/v1.3.0...v1.4.0

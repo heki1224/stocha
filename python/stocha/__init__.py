@@ -38,6 +38,9 @@ from stocha._stocha import heston_calibrate as _heston_calibrate
 from stocha._stocha import ssvi_calibrate as _ssvi_calibrate
 from stocha._stocha import ssvi_implied_vol as _ssvi_implied_vol
 from stocha._stocha import ssvi_local_vol as _ssvi_local_vol
+from stocha._stocha import barrier_price as _barrier_price
+from stocha._stocha import asian_price as _asian_price
+from stocha._stocha import lookback_price as _lookback_price
 from stocha._stocha import __version__
 
 __all__ = [
@@ -62,6 +65,9 @@ __all__ = [
     "ssvi_calibrate",
     "ssvi_implied_vol",
     "ssvi_local_vol",
+    "barrier_price",
+    "asian_price",
+    "lookback_price",
     "__version__",
 ]
 
@@ -971,4 +977,162 @@ def ssvi_local_vol(
         np.asarray(theta_values, dtype=np.float64),
         np.asarray(t_values, dtype=np.float64),
         eta=eta, gamma=gamma, rho=rho,
+    )
+
+
+def barrier_price(
+    s: float,
+    k: float,
+    r: float,
+    sigma: float,
+    t: float,
+    barrier: float,
+    barrier_type: Literal[
+        "up-and-out", "up-and-in", "down-and-out", "down-and-in",
+        "uo", "ui", "do", "di",
+    ] = "up-and-out",
+    option_type: Literal["call", "put"] = "call",
+    q: float = 0.0,
+    n_paths: int = 100_000,
+    n_steps: int = 252,
+    seed: int = 42,
+    method: Literal["auto", "analytical", "mc"] = "auto",
+) -> float:
+    """Price a barrier option.
+
+    Supports 8 barrier types: {up,down} × {in,out} × {call,put}.
+
+    With ``method="auto"`` (default), uses the Reiner-Rubinstein analytical
+    formula (continuous monitoring, GBM) when possible, falling back to
+    Monte Carlo for edge cases. Use ``method="mc"`` to force discrete
+    monitoring via simulation.
+
+    Args:
+        s:            Spot price (must be > 0).
+        k:            Strike price (must be > 0).
+        r:            Risk-free rate (annualized).
+        sigma:        Volatility (annualized, must be > 0).
+        t:            Time to maturity in years (must be > 0).
+        barrier:      Barrier level (must be > 0).
+        barrier_type: Barrier type (default ``"up-and-out"``).
+        option_type:  ``"call"`` or ``"put"`` (default ``"call"``).
+        q:            Continuous dividend yield (default ``0.0``).
+        n_paths:      Number of MC paths (default ``100000``).
+        n_steps:      Number of time steps for MC (default ``252``).
+        seed:         Random seed for MC (default ``42``).
+        method:       ``"auto"``, ``"analytical"``, or ``"mc"``.
+
+    Returns:
+        Option price as a float.
+
+    Example:
+        >>> p = barrier_price(s=100, k=100, r=0.05, sigma=0.2, t=1.0,
+        ...                   barrier=120, barrier_type="up-and-out")
+    """
+    return _barrier_price(
+        s=s, k=k, r=r, sigma=sigma, t=t, barrier=barrier,
+        barrier_type=barrier_type, option_type=option_type,
+        q=q, n_paths=n_paths, n_steps=n_steps, seed=seed, method=method,
+    )
+
+
+def asian_price(
+    s: float,
+    k: float,
+    r: float,
+    sigma: float,
+    t: float,
+    n_steps: int = 252,
+    average_type: Literal["arithmetic", "geometric"] = "arithmetic",
+    strike_type: Literal["fixed", "floating"] = "fixed",
+    option_type: Literal["call", "put"] = "call",
+    q: float = 0.0,
+    n_paths: int = 100_000,
+    seed: int = 42,
+    method: Literal["auto", "analytical", "mc"] = "auto",
+) -> float:
+    """Price an Asian (average price/strike) option.
+
+    With ``method="auto"``, uses the Kemna-Vorst closed-form for geometric
+    average with fixed strike. All other combinations use Monte Carlo.
+    Arithmetic average MC uses the geometric price as a control variate
+    for variance reduction.
+
+    Args:
+        s:            Spot price (must be > 0).
+        k:            Strike price (must be > 0).
+        r:            Risk-free rate (annualized).
+        sigma:        Volatility (annualized, must be > 0).
+        t:            Time to maturity in years (must be > 0).
+        n_steps:      Number of averaging points / time steps (default ``252``).
+        average_type: ``"arithmetic"`` or ``"geometric"`` (default ``"arithmetic"``).
+        strike_type:  ``"fixed"`` or ``"floating"`` (default ``"fixed"``).
+        option_type:  ``"call"`` or ``"put"`` (default ``"call"``).
+        q:            Continuous dividend yield (default ``0.0``).
+        n_paths:      Number of MC paths (default ``100000``).
+        seed:         Random seed for MC (default ``42``).
+        method:       ``"auto"``, ``"analytical"``, or ``"mc"``.
+
+    Returns:
+        Option price as a float.
+
+    Example:
+        >>> p = asian_price(s=100, k=100, r=0.05, sigma=0.2, t=1.0)
+    """
+    return _asian_price(
+        s=s, k=k, r=r, sigma=sigma, t=t, n_steps=n_steps,
+        average_type=average_type, strike_type=strike_type,
+        option_type=option_type, q=q,
+        n_paths=n_paths, seed=seed, method=method,
+    )
+
+
+def lookback_price(
+    s: float,
+    r: float,
+    sigma: float,
+    t: float,
+    n_steps: int = 252,
+    strike_type: Literal["floating", "fixed"] = "floating",
+    option_type: Literal["call", "put"] = "call",
+    k: float = 0.0,
+    q: float = 0.0,
+    n_paths: int = 100_000,
+    seed: int = 42,
+    method: Literal["auto", "analytical", "mc"] = "auto",
+) -> float:
+    """Price a lookback option.
+
+    Floating strike: payoff = S_T - S_min (call) or S_max - S_T (put).
+    Fixed strike: payoff = (S_max - K)+ (call) or (K - S_min)+ (put).
+
+    With ``method="auto"``, uses Goldman-Sosin-Gatto (floating) or
+    Conze-Viswanathan (fixed) analytical formulas (continuous monitoring).
+    MC uses discrete monitoring — prices will be lower than analytical
+    due to missed extremes between time steps.
+
+    Args:
+        s:            Spot price (must be > 0).
+        r:            Risk-free rate (annualized).
+        sigma:        Volatility (annualized, must be > 0).
+        t:            Time to maturity in years (must be > 0).
+        n_steps:      Number of time steps for MC (default ``252``).
+        strike_type:  ``"floating"`` or ``"fixed"`` (default ``"floating"``).
+        option_type:  ``"call"`` or ``"put"`` (default ``"call"``).
+        k:            Strike price (required for fixed strike).
+        q:            Continuous dividend yield (default ``0.0``).
+        n_paths:      Number of MC paths (default ``100000``).
+        seed:         Random seed for MC (default ``42``).
+        method:       ``"auto"``, ``"analytical"``, or ``"mc"``.
+
+    Returns:
+        Option price as a float.
+
+    Example:
+        >>> p = lookback_price(s=100, r=0.05, sigma=0.2, t=1.0)
+    """
+    return _lookback_price(
+        s=s, r=r, sigma=sigma, t=t, n_steps=n_steps,
+        strike_type=strike_type, option_type=option_type,
+        k=k, q=q, n_paths=n_paths, seed=seed, method=method,
     )
