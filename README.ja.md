@@ -227,9 +227,9 @@ print(f"ルックバック浮動コール: {lp:.4f}")
 | `ssvi_calibrate(log_moneyness, theta, market_total_var, ...)` | SSVI 曲面 `(η, γ, ρ)` のキャリブレーション — 設計上カレンダー裁定フリー |
 | `ssvi_implied_vol(log_moneyness, theta, t, eta, gamma, rho)` | SSVI 曲面からインプライド・ボラティリティを計算 |
 | `ssvi_local_vol(log_moneyness, theta_values, t_values, eta, gamma, rho)` | SSVI 解析微分による Dupire 局所ボラティリティ（有限差分不使用） |
-| `barrier_price(s, k, r, sigma, t, barrier, barrier_type, ...)` | バリアオプション: Reiner-Rubinstein 解析解（8型）+ MC フォールバック |
-| `asian_price(s, k, r, sigma, t, n_steps, average_type, ...)` | アジアンオプション: Kemna-Vorst 解析解（幾何平均）+ MC（算術平均、幾何 CV） |
-| `lookback_price(s, r, sigma, t, n_steps, strike_type, ...)` | ルックバックオプション: Goldman-Sosin-Gatto / Conze-Viswanathan 解析解 + MC |
+| `barrier_price(s, k, r, sigma, t, barrier, barrier_type, ..., n_monitoring, rebate, rebate_at_hit)` | バリアオプション: Reiner-Rubinstein 解析解（8型）+ MC フォールバック。`n_monitoring` で Broadie-Glasserman-Kou (1997) 連続性補正、`rebate` / `rebate_at_hit` で Haug §4.17 リベート（paid-at-hit / paid-at-expiry）を適用 |
+| `asian_price(s, k, r, sigma, t, n_steps, average_type, ..., running_avg, time_elapsed)` | アジアンオプション: Kemna-Vorst 解析解（幾何平均）+ MC（算術平均、幾何 CV）。`running_avg` と `time_elapsed` で期中評価が可能（`K* = (T·K − t1·A_spent)/(T−t1)` 変換） |
+| `lookback_price(s, r, sigma, t, n_steps, strike_type, ..., running_max, running_min)` | ルックバックオプション: Goldman-Sosin-Gatto / Conze-Viswanathan 解析解 + MC を共通項 `T_3(S, X)` で統一。`running_max` / `running_min` で期中評価対応 |
 
 ## パフォーマンス（Apple M4、リリースビルド）
 
@@ -255,6 +255,7 @@ print(f"ルックバック浮動コール: {lp:.4f}")
 | `examples/09_heston_calibration.ja.py` | Heston COS 法プライシング・IV スマイル・単一/マルチ満期キャリブレーション |
 | `examples/10_local_vol.ja.py` | SSVI 曲面・Dupire 局所ボラ・連続配当利回り |
 | `examples/11_exotic_options.ja.py` | バリア・アジア・ルックバックオプションの価格計算 |
+| `examples/12_exotic_enhancements.ja.py` | BGK 離散監視補正、アジア／ルックバック期中評価、バリア・リベート（v1.7.1） |
 
 ## 対象ユーザー
 
@@ -277,7 +278,7 @@ print(f"ルックバック浮動コール: {lp:.4f}")
 | **v1.5** ✅ | Heston キャリブレーション（COS 法プライシング + 射影 LM） |
 | **v1.6** ✅ | **局所ボラティリティ**: SSVI 曲面、Dupire 局所ボラ（解析微分）、連続配当 |
 | **v1.7** ✅ | **エキゾチック・オプション**: バリア（Reiner-Rubinstein）、アジア（Kemna-Vorst + MC/CV）、ルックバック（Goldman-Sosin-Gatto） |
-| **v1.7.1** | **エキゾチック拡張**: リベート、期中評価（経過平均/現在極値）、Broadie-Glasserman-Kou 離散監視補正 |
+| **v1.7.1** ✅ | **エキゾチック拡張**: リベート（Haug §4.17）、期中評価（経過平均/現在極値）、Broadie-Glasserman-Kou 離散監視補正。ルックバック解析解を Hull / Haug §4.18 準拠に書き換え。 |
 | **v1.8** | **ハイブリッド・モデル**: Heston-Hull-White（株価＋金利の同時確率化） |
 | **v1.9** | **高度な感応度**: 尤度比法（LRM）による不連続ペイオフのグリークス計算 |
 | **v2.0** | **AI エコシステム**: DLPack ゼロコピー連携（PyTorch/JAX）による Deep Hedging 対応 |

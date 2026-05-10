@@ -227,9 +227,9 @@ print(f"Lookback floating call: {lp:.4f}")
 | `ssvi_calibrate(log_moneyness, theta, market_total_var, ...)` | Calibrate SSVI surface `(η, γ, ρ)` — calendar-arbitrage-free by construction |
 | `ssvi_implied_vol(log_moneyness, theta, t, eta, gamma, rho)` | Implied volatility from SSVI surface |
 | `ssvi_local_vol(log_moneyness, theta_values, t_values, eta, gamma, rho)` | Dupire local volatility via SSVI analytical derivatives (no finite differences) |
-| `barrier_price(s, k, r, sigma, t, barrier, barrier_type, ...)` | Barrier option pricing: Reiner-Rubinstein analytical (8 types) + MC fallback |
-| `asian_price(s, k, r, sigma, t, n_steps, average_type, ...)` | Asian option pricing: Kemna-Vorst analytical (geometric) + MC with geometric CV (arithmetic) |
-| `lookback_price(s, r, sigma, t, n_steps, strike_type, ...)` | Lookback option pricing: Goldman-Sosin-Gatto / Conze-Viswanathan analytical + MC |
+| `barrier_price(s, k, r, sigma, t, barrier, barrier_type, ..., n_monitoring, rebate, rebate_at_hit)` | Barrier option pricing: Reiner-Rubinstein analytical (8 types) + MC fallback. `n_monitoring` enables Broadie-Glasserman-Kou (1997) continuity correction; `rebate` / `rebate_at_hit` apply Haug §4.17 rebate formulas (paid-at-hit or paid-at-expiry) |
+| `asian_price(s, k, r, sigma, t, n_steps, average_type, ..., running_avg, time_elapsed)` | Asian option pricing: Kemna-Vorst analytical (geometric) + MC with geometric CV (arithmetic). Pass `running_avg` and `time_elapsed` for mid-life (seasoned) valuation via the `K* = (T·K − t1·A_spent)/(T−t1)` transformation |
+| `lookback_price(s, r, sigma, t, n_steps, strike_type, ..., running_max, running_min)` | Lookback option pricing: Goldman-Sosin-Gatto / Conze-Viswanathan analytical + MC, unified by the `T_3(S, X)` helper. Pass `running_max` / `running_min` for seasoned mid-life pricing |
 
 ## Performance (Apple M4, release build)
 
@@ -255,6 +255,7 @@ print(f"Lookback floating call: {lp:.4f}")
 | `examples/09_heston_calibration.py` | Heston COS pricing, implied vol smile, single/multi-maturity calibration |
 | `examples/10_local_vol.py` | SSVI surface, Dupire local vol, continuous dividends |
 | `examples/11_exotic_options.py` | Barrier, Asian, and Lookback option pricing |
+| `examples/12_exotic_enhancements.py` | BGK discrete-monitoring correction, seasoning for Asian / Lookback, barrier rebate (v1.7.1) |
 
 Each example has a Japanese counterpart (`*.ja.py`).
 
@@ -279,7 +280,7 @@ Each example has a Japanese counterpart (`*.ja.py`).
 | **v1.5** ✅ | Heston calibration (COS method pricing + Projected LM) |
 | **v1.6** ✅ | **Local Volatility**: SSVI surface, Dupire local vol (analytical), continuous dividends |
 | **v1.7** ✅ | **Exotic Options**: Barrier (Reiner-Rubinstein), Asian (Kemna-Vorst + MC/CV), Lookback (Goldman-Sosin-Gatto) |
-| **v1.7.1** | **Exotic Enhancements**: Rebate, seasoning (running avg / current extreme), Broadie-Glasserman-Kou discrete monitoring correction |
+| **v1.7.1** ✅ | **Exotic Enhancements**: Rebate (Haug §4.17), seasoning for Asian / Lookback, Broadie-Glasserman-Kou discrete-monitoring correction. Lookback analytical formulas rewritten to match Hull / Haug §4.18. |
 | **v1.8** | **Hybrid Models**: Heston-Hull-White (stochastic equity + interest rates) |
 | **v1.9** | **Advanced Sensitivities**: Likelihood Ratio Method (LRM) for discontinuous payoffs |
 | **v2.0** | **AI Ecosystem**: DLPack zero-copy interop (PyTorch/JAX) for Deep Hedging |

@@ -1547,7 +1547,7 @@ fn ssvi_local_vol<'py>(
 /// method="auto" uses the Reiner-Rubinstein analytical formula when possible,
 /// falling back to Monte Carlo for edge cases.
 #[pyfunction]
-#[pyo3(signature = (s, k, r, sigma, t, barrier, barrier_type="up-and-out", option_type="call", q=0.0, n_paths=100_000, n_steps=252, seed=42, method="auto"))]
+#[pyo3(signature = (s, k, r, sigma, t, barrier, barrier_type="up-and-out", option_type="call", q=0.0, n_paths=100_000, n_steps=252, seed=42, method="auto", n_monitoring=None, rebate=0.0, rebate_at_hit=false))]
 fn barrier_price<'py>(
     py: Python<'py>,
     s: f64,
@@ -1563,6 +1563,9 @@ fn barrier_price<'py>(
     n_steps: usize,
     seed: u64,
     method: &str,
+    n_monitoring: Option<u32>,
+    rebate: f64,
+    rebate_at_hit: bool,
 ) -> PyResult<f64> {
     if s <= 0.0 {
         return Err(pyo3::exceptions::PyValueError::new_err("s must be positive"));
@@ -1607,6 +1610,8 @@ fn barrier_price<'py>(
     let params = BarrierParams {
         s, k, r, q, sigma, t, barrier,
         direction, kind, option_type: opt,
+        n_monitoring,
+        rebate, rebate_at_hit,
     };
 
     let price = match method {
@@ -1638,7 +1643,7 @@ fn barrier_price<'py>(
 /// Geometric average with fixed strike uses the Kemna-Vorst closed-form.
 /// Arithmetic average uses Monte Carlo with geometric control variate.
 #[pyfunction]
-#[pyo3(signature = (s, k, r, sigma, t, n_steps=252, average_type="arithmetic", strike_type="fixed", option_type="call", q=0.0, n_paths=100_000, seed=42, method="auto"))]
+#[pyo3(signature = (s, k, r, sigma, t, n_steps=252, average_type="arithmetic", strike_type="fixed", option_type="call", q=0.0, n_paths=100_000, seed=42, method="auto", running_avg=None, time_elapsed=None))]
 fn asian_price<'py>(
     py: Python<'py>,
     s: f64,
@@ -1654,6 +1659,8 @@ fn asian_price<'py>(
     n_paths: usize,
     seed: u64,
     method: &str,
+    running_avg: Option<f64>,
+    time_elapsed: Option<f64>,
 ) -> PyResult<f64> {
     if s <= 0.0 {
         return Err(pyo3::exceptions::PyValueError::new_err("s must be positive"));
@@ -1704,6 +1711,7 @@ fn asian_price<'py>(
     let params = AsianParams {
         s, k, r, q, sigma, t, n_steps,
         average_type: avg, strike_type: strike, option_type: opt,
+        running_avg, time_elapsed,
     };
 
     let has_analytical = avg == AsianAverageType::Geometric && strike == AsianStrikeType::Fixed;
@@ -1749,7 +1757,7 @@ fn asian_price<'py>(
 /// Conze-Viswanathan. Both assume continuous monitoring.
 /// MC uses discrete monitoring (path max/min tracking).
 #[pyfunction]
-#[pyo3(signature = (s, r, sigma, t, n_steps=252, strike_type="floating", option_type="call", k=0.0, q=0.0, n_paths=100_000, seed=42, method="auto"))]
+#[pyo3(signature = (s, r, sigma, t, n_steps=252, strike_type="floating", option_type="call", k=0.0, q=0.0, n_paths=100_000, seed=42, method="auto", running_max=None, running_min=None))]
 fn lookback_price<'py>(
     py: Python<'py>,
     s: f64,
@@ -1764,6 +1772,8 @@ fn lookback_price<'py>(
     n_paths: usize,
     seed: u64,
     method: &str,
+    running_max: Option<f64>,
+    running_min: Option<f64>,
 ) -> PyResult<f64> {
     if s <= 0.0 {
         return Err(pyo3::exceptions::PyValueError::new_err("s must be positive"));
@@ -1807,6 +1817,7 @@ fn lookback_price<'py>(
     let params = LookbackParams {
         s, k, r, q, sigma, t, n_steps,
         strike_type: st, option_type: opt,
+        running_max, running_min,
     };
 
     let analytical_fn = match st {
@@ -1865,6 +1876,6 @@ fn _stocha(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(barrier_price, m)?)?;
     m.add_function(wrap_pyfunction!(asian_price, m)?)?;
     m.add_function(wrap_pyfunction!(lookback_price, m)?)?;
-    m.add("__version__", "1.7.0")?;
+    m.add("__version__", "1.7.1")?;
     Ok(())
 }

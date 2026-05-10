@@ -997,6 +997,9 @@ def barrier_price(
     n_steps: int = 252,
     seed: int = 42,
     method: Literal["auto", "analytical", "mc"] = "auto",
+    n_monitoring: int | None = None,
+    rebate: float = 0.0,
+    rebate_at_hit: bool = False,
 ) -> float:
     """Price a barrier option.
 
@@ -1006,6 +1009,12 @@ def barrier_price(
     formula (continuous monitoring, GBM) when possible, falling back to
     Monte Carlo for edge cases. Use ``method="mc"`` to force discrete
     monitoring via simulation.
+
+    For discrete monitoring (e.g. daily/monthly fixings) under ``method="analytical"``,
+    pass ``n_monitoring`` to apply the Broadie-Glasserman-Kou (1997) continuity
+    correction H · exp(±β·σ·√(T/n)) with β = -ζ(1/2)/√(2π) ≈ 0.5826. This shifts
+    the barrier outward, raising the price relative to the continuous formula.
+    ``method="mc"`` ignores this argument (paths are already discrete).
 
     Args:
         s:            Spot price (must be > 0).
@@ -1021,6 +1030,14 @@ def barrier_price(
         n_steps:      Number of time steps for MC (default ``252``).
         seed:         Random seed for MC (default ``42``).
         method:       ``"auto"``, ``"analytical"``, or ``"mc"``.
+        n_monitoring: Number of discrete monitoring dates for the BGK continuity
+                      correction (analytical only). ``None`` = continuous monitoring.
+        rebate:       Rebate amount R paid when the barrier event triggers — for KO,
+                      paid when the barrier is hit (timing controlled by
+                      ``rebate_at_hit``); for KI, paid at expiry only if the barrier
+                      was never hit. Default ``0.0`` (no rebate).
+        rebate_at_hit: KO only — if ``True``, rebate is paid immediately at first
+                      hit time; otherwise paid at expiry T conditional on hit.
 
     Returns:
         Option price as a float.
@@ -1028,11 +1045,18 @@ def barrier_price(
     Example:
         >>> p = barrier_price(s=100, k=100, r=0.05, sigma=0.2, t=1.0,
         ...                   barrier=120, barrier_type="up-and-out")
+        >>> # Monthly-monitored variant
+        >>> p_disc = barrier_price(s=100, k=100, r=0.05, sigma=0.2, t=1.0,
+        ...                        barrier=120, n_monitoring=12)
+        >>> # KO with rebate paid at hit
+        >>> p_reb = barrier_price(s=100, k=100, r=0.05, sigma=0.2, t=1.0,
+        ...                       barrier=120, rebate=5, rebate_at_hit=True)
     """
     return _barrier_price(
         s=s, k=k, r=r, sigma=sigma, t=t, barrier=barrier,
         barrier_type=barrier_type, option_type=option_type,
         q=q, n_paths=n_paths, n_steps=n_steps, seed=seed, method=method,
+        n_monitoring=n_monitoring, rebate=rebate, rebate_at_hit=rebate_at_hit,
     )
 
 
@@ -1050,6 +1074,8 @@ def asian_price(
     n_paths: int = 100_000,
     seed: int = 42,
     method: Literal["auto", "analytical", "mc"] = "auto",
+    running_avg: float | None = None,
+    time_elapsed: float | None = None,
 ) -> float:
     """Price an Asian (average price/strike) option.
 
@@ -1058,12 +1084,18 @@ def asian_price(
     Arithmetic average MC uses the geometric price as a control variate
     for variance reduction.
 
+    Pass ``running_avg`` and ``time_elapsed`` to price a seasoned (in-progress)
+    Asian option. The pricing reduces to a forward-starting Asian on the
+    remaining period [t1, T] with adjusted strike K* = (T·K - t1·A_spent)/(T-t1)
+    and price scaled by (T-t1)/T. When K* ≤ 0 the option is deeply ITM and a
+    deterministic deep-ITM PV is returned (calls only; puts return 0).
+
     Args:
         s:            Spot price (must be > 0).
         k:            Strike price (must be > 0).
         r:            Risk-free rate (annualized).
         sigma:        Volatility (annualized, must be > 0).
-        t:            Time to maturity in years (must be > 0).
+        t:            Total tenor in years from inception (must be > 0).
         n_steps:      Number of averaging points / time steps (default ``252``).
         average_type: ``"arithmetic"`` or ``"geometric"`` (default ``"arithmetic"``).
         strike_type:  ``"fixed"`` or ``"floating"`` (default ``"fixed"``).
@@ -1072,18 +1104,26 @@ def asian_price(
         n_paths:      Number of MC paths (default ``100000``).
         seed:         Random seed for MC (default ``42``).
         method:       ``"auto"``, ``"analytical"``, or ``"mc"``.
+        running_avg:  Average price observed over [0, time_elapsed] (must match
+                      ``average_type``'s mean convention). ``None`` = no seasoning.
+        time_elapsed: Time already elapsed since inception (years). ``None`` =
+                      no seasoning. Both fields must be supplied together.
 
     Returns:
         Option price as a float.
 
     Example:
         >>> p = asian_price(s=100, k=100, r=0.05, sigma=0.2, t=1.0)
+        >>> # 6 months in, average so far is 102
+        >>> p_seasoned = asian_price(s=100, k=100, r=0.05, sigma=0.2, t=1.0,
+        ...                          running_avg=102, time_elapsed=0.5)
     """
     return _asian_price(
         s=s, k=k, r=r, sigma=sigma, t=t, n_steps=n_steps,
         average_type=average_type, strike_type=strike_type,
         option_type=option_type, q=q,
         n_paths=n_paths, seed=seed, method=method,
+        running_avg=running_avg, time_elapsed=time_elapsed,
     )
 
 
@@ -1100,6 +1140,8 @@ def lookback_price(
     n_paths: int = 100_000,
     seed: int = 42,
     method: Literal["auto", "analytical", "mc"] = "auto",
+    running_max: float | None = None,
+    running_min: float | None = None,
 ) -> float:
     """Price a lookback option.
 
@@ -1110,6 +1152,11 @@ def lookback_price(
     Conze-Viswanathan (fixed) analytical formulas (continuous monitoring).
     MC uses discrete monitoring — prices will be lower than analytical
     due to missed extremes between time steps.
+
+    Pass ``running_max`` (for puts/fixed-call) or ``running_min`` (for
+    calls/fixed-put) to price a seasoned lookback. Floating-strike pricing
+    decomposes into a forward intrinsic plus a fixed-strike lookback at the
+    historical extremum. Constraints: ``running_max ≥ s``, ``running_min ≤ s``.
 
     Args:
         s:            Spot price (must be > 0).
@@ -1124,15 +1171,23 @@ def lookback_price(
         n_paths:      Number of MC paths (default ``100000``).
         seed:         Random seed for MC (default ``42``).
         method:       ``"auto"``, ``"analytical"``, or ``"mc"``.
+        running_max:  Historical maximum since inception (must be ≥ s). ``None``
+                      = no seasoning (treated as s).
+        running_min:  Historical minimum since inception (must be ≤ s). ``None``
+                      = no seasoning (treated as s).
 
     Returns:
         Option price as a float.
 
     Example:
         >>> p = lookback_price(s=100, r=0.05, sigma=0.2, t=1.0)
+        >>> # Mid-life lookback put, max already touched 115
+        >>> p_seasoned = lookback_price(s=100, r=0.05, sigma=0.2, t=0.5,
+        ...                             option_type="put", running_max=115)
     """
     return _lookback_price(
         s=s, r=r, sigma=sigma, t=t, n_steps=n_steps,
         strike_type=strike_type, option_type=option_type,
         k=k, q=q, n_paths=n_paths, seed=seed, method=method,
+        running_max=running_max, running_min=running_min,
     )

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-05-10
+
+### Added
+
+- **Broadie-Glasserman-Kou (1997) discrete-monitoring correction** for barrier
+  options. New `n_monitoring` argument to `barrier_price` shifts the analytical
+  barrier outward by `H · exp(±β·σ·√(T/n))` with `β = -ζ(1/2)/√(2π) ≈ 0.5826`
+  to account for periodic monitoring. Applied to the analytical path only;
+  Monte Carlo (already discrete) ignores the argument to avoid double counting.
+- **Seasoning (mid-life pricing)** for Asian and Lookback options:
+  - `asian_price` now accepts `running_avg` and `time_elapsed`. Pricing reduces
+    to a forward-starting Asian over `[t1, T]` with adjusted strike
+    `K* = (T·K - t1·A_spent)/(T-t1)` and price scaled by `(T-t1)/T`. When
+    `K* ≤ 0` the call returns a deterministic deep-ITM PV and the put is 0.
+  - `lookback_price` now accepts `running_max` and `running_min`. The four
+    closed forms are seasoning-native via the running extremum parameter,
+    with deterministic intrinsic addition when the strike is already breached.
+- **Rebate** for barrier options. New `rebate` and `rebate_at_hit` arguments
+  implement Haug §4.17 — paid-at-hit `R·[(H/S)^{μ-λ} N(d1) + (H/S)^{μ+λ} N(d2)]`
+  for KO, paid-at-expiry `R·e^{-rT}·P(hit)` for KO, and `R·e^{-rT}·(1-P(hit))`
+  for KI. Edge cases handled (already breached, KI extinguishes on hit).
+
+### Fixed
+
+- **Lookback analytical formulas (GSG floating, Conze-Viswanathan fixed) had
+  systematic errors** in v1.7.0 (~14% over-pricing for ATM floating call:
+  19.55 instead of the correct 17.22; fixed call 17.06 instead of 17.22).
+  Both formulas have been rewritten using a unified `T_3(S, X)` helper based
+  on Hull / Haug §4.18, including the L'Hôpital limit for `r = q`. ATM
+  closed-form values now match Hull / Haug textbook references exactly:
+  floating call = fixed call = 17.2168, floating put = fixed put = 12.3398.
+
 ## [1.7.0] - 2026-05-07
 
 ### Added

@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "stocha"
-version = "1.7.0"
+version = "1.7.1"
 description = "High-performance random number and financial simulation library"
 readme = "README.md"
 license = { file = "LICENSE" }
