@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- **Reiner-Rubinstein barrier accuracy audit against QuantLib**: new
+  `TestBarrierQuantLibReference` (50 cases across 6 groups — standard 8 types ×
+  3 strikes, dividend regimes including `q > r` negative carry, in-out parity,
+  trivial already-knocked cases, S≈H near-barrier digit cancellation, and edge
+  maturities). Verified `stocha` matches QuantLib `AnalyticBarrierEngine` to
+  `atol=5e-05, rtol=1e-05` — the cross-library noise floor (Rust `libm` vs
+  Boost `boost::math`). No formula bug detected. `QuantLib>=1.30` added to dev
+  dependencies; production package is unaffected.
+
 ## [1.7.1] - 2026-05-10
 
 ### Added

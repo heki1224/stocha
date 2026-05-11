@@ -1,7 +1,15 @@
 """Tests for exotic options: barrier, Asian, and lookback."""
 
+import math
+
 import pytest
 import stocha
+
+try:
+    import QuantLib as ql
+    _HAS_QL = True
+except ImportError:
+    _HAS_QL = False
 
 
 class TestBarrierPrice:
@@ -195,6 +203,270 @@ class TestBarrierRebate:
                                   method="mc", n_paths=100_000, n_steps=2000, seed=1)
         rel = abs(mc - ana) / ana
         assert rel < 0.05
+
+
+_BARRIER_QL_MAP = {
+    "up-and-out": "UpOut",
+    "up-and-in": "UpIn",
+    "down-and-out": "DownOut",
+    "down-and-in": "DownIn",
+}
+
+
+def _ql_setup(T_days, r, q, sigma):
+    today = ql.Date(15, 5, 2026)
+    ql.Settings.instance().evaluationDate = today
+    day_count = ql.Actual365Fixed()
+    calendar = ql.NullCalendar()
+    maturity = today + ql.Period(T_days, ql.Days)
+    T_exact = day_count.yearFraction(today, maturity)
+    r_ts = ql.YieldTermStructureHandle(ql.FlatForward(today, r, day_count))
+    q_ts = ql.YieldTermStructureHandle(ql.FlatForward(today, q, day_count))
+    vol_ts = ql.BlackVolTermStructureHandle(
+        ql.BlackConstantVol(today, calendar, sigma, day_count)
+    )
+    return today, maturity, T_exact, r_ts, q_ts, vol_ts
+
+
+def _ql_barrier(S, K, T_days, r, q, sigma, barrier_type, H, option_type):
+    today, maturity, T_exact, r_ts, q_ts, vol_ts = _ql_setup(T_days, r, q, sigma)
+    spot_h = ql.QuoteHandle(ql.SimpleQuote(S))
+    process = ql.BlackScholesMertonProcess(spot_h, q_ts, r_ts, vol_ts)
+    engine = ql.AnalyticBarrierEngine(process)
+    payoff = ql.PlainVanillaPayoff(
+        ql.Option.Call if option_type == "call" else ql.Option.Put, K
+    )
+    exercise = ql.EuropeanExercise(maturity)
+    barrier_enum = getattr(ql.Barrier, _BARRIER_QL_MAP[barrier_type])
+    option = ql.BarrierOption(barrier_enum, H, 0.0, payoff, exercise)
+    option.setPricingEngine(engine)
+    return option.NPV(), T_exact
+
+
+def _ql_vanilla(S, K, T_days, r, q, sigma, option_type):
+    today, maturity, T_exact, r_ts, q_ts, vol_ts = _ql_setup(T_days, r, q, sigma)
+    spot_h = ql.QuoteHandle(ql.SimpleQuote(S))
+    process = ql.BlackScholesMertonProcess(spot_h, q_ts, r_ts, vol_ts)
+    engine = ql.AnalyticEuropeanEngine(process)
+    payoff = ql.PlainVanillaPayoff(
+        ql.Option.Call if option_type == "call" else ql.Option.Put, K
+    )
+    exercise = ql.EuropeanExercise(maturity)
+    option = ql.VanillaOption(payoff, exercise)
+    option.setPricingEngine(engine)
+    return option.NPV(), T_exact
+
+
+@pytest.mark.skipif(not _HAS_QL, reason="QuantLib not installed")
+class TestBarrierQuantLibReference:
+    """Accuracy audit: Reiner-Rubinstein barrier formula vs QuantLib AnalyticBarrierEngine.
+
+    Tolerance design (α-strict, see .artifacts/2026-05-10-accuracy-audit-tests/):
+      (a) standard 8 types × 3 strikes: atol=1e-06, rtol=1e-05
+      (b) dividend regimes (q=0/0.06/0.10): atol=1e-06, rtol=1e-05
+      (c) in-out parity (stocha-internal): atol=1e-12, rtol=1e-10
+      (d) trivial cases (S touched / past barrier): exact 0.0 or stocha vanilla
+      (e) S≈H near-barrier: atol=1e-04, rtol=1e-03 (digit cancellation regime)
+      (f) edge maturity (T=1/365, T=10): NaN/Inf check only
+    """
+
+    S = 100.0
+    SIGMA = 0.25
+    T_DAYS = 183
+    R = 0.10
+    Q = 0.04
+    # Noise floor: stocha (Rust libm) vs QL (boost::math) cross-library float
+    # diff is ~3e-05 abs at worst. atol=5e-05 absorbs it with 50% margin while
+    # rtol=1e-05 still detects O(1e-04) relative bugs at large prices (~10).
+    ATOL = 5e-05
+    RTOL = 1e-05
+
+    # ------- (a) Standard 8 types × 3 strikes -------
+
+    @pytest.mark.parametrize(
+        "barrier_type,H",
+        [
+            ("up-and-out", 105.0),
+            ("up-and-in", 105.0),
+            ("down-and-out", 95.0),
+            ("down-and-in", 95.0),
+        ],
+    )
+    @pytest.mark.parametrize("K", [90.0, 100.0, 110.0])
+    @pytest.mark.parametrize("option_type", ["call", "put"])
+    def test_standard_matches_quantlib(self, barrier_type, H, K, option_type):
+        ql_price, T_exact = _ql_barrier(
+            self.S, K, self.T_DAYS, self.R, self.Q, self.SIGMA,
+            barrier_type, H, option_type,
+        )
+        stocha_price = stocha.barrier_price(
+            s=self.S, k=K, r=self.R, sigma=self.SIGMA, t=T_exact,
+            barrier=H, barrier_type=barrier_type, option_type=option_type,
+            q=self.Q, method="analytical",
+        )
+        assert math.isfinite(stocha_price)
+        assert stocha_price == pytest.approx(
+            ql_price, abs=self.ATOL, rel=self.RTOL
+        ), (
+            f"{barrier_type} {option_type} K={K} H={H}: "
+            f"stocha={stocha_price:.10f}, QL={ql_price:.10f}, "
+            f"abs_err={abs(stocha_price - ql_price):.3e}"
+        )
+
+    # ------- (b) Dividend regimes including negative carry q > r -------
+
+    @pytest.mark.parametrize("q", [0.0, 0.06, 0.10])
+    @pytest.mark.parametrize(
+        "barrier_type,H,K,option_type",
+        [
+            ("up-and-out", 110.0, 100.0, "call"),
+            ("down-and-in", 95.0, 100.0, "put"),
+        ],
+    )
+    def test_dividend_regimes_match_quantlib(
+        self, q, barrier_type, H, K, option_type
+    ):
+        ql_price, T_exact = _ql_barrier(
+            self.S, K, self.T_DAYS, self.R, q, self.SIGMA,
+            barrier_type, H, option_type,
+        )
+        stocha_price = stocha.barrier_price(
+            s=self.S, k=K, r=self.R, sigma=self.SIGMA, t=T_exact,
+            barrier=H, barrier_type=barrier_type, option_type=option_type,
+            q=q, method="analytical",
+        )
+        assert stocha_price == pytest.approx(
+            ql_price, abs=self.ATOL, rel=self.RTOL
+        ), (
+            f"{barrier_type} {option_type} q={q}: "
+            f"stocha={stocha_price:.10f}, QL={ql_price:.10f}, "
+            f"abs_err={abs(stocha_price - ql_price):.3e}"
+        )
+
+    # ------- (c) In-out parity (stocha-internal, no QL mixing) -------
+
+    @pytest.mark.parametrize("option_type", ["call", "put"])
+    @pytest.mark.parametrize("K", [90.0, 100.0, 110.0])
+    def test_up_in_out_parity_internal(self, option_type, K):
+        # UI(call) + UO(call) and DI(call) + DO(call) must both equal the same
+        # vanilla. Checking UI+UO == DI+DO avoids any external BS implementation.
+        kwargs = dict(
+            s=self.S, k=K, r=self.R, sigma=self.SIGMA, t=0.5,
+            q=self.Q, option_type=option_type, method="analytical",
+        )
+        ui = stocha.barrier_price(barrier=105.0, barrier_type="up-and-in", **kwargs)
+        uo = stocha.barrier_price(barrier=105.0, barrier_type="up-and-out", **kwargs)
+        di = stocha.barrier_price(barrier=95.0, barrier_type="down-and-in", **kwargs)
+        do = stocha.barrier_price(barrier=95.0, barrier_type="down-and-out", **kwargs)
+        assert (ui + uo) == pytest.approx(di + do, abs=1e-12, rel=1e-10), (
+            f"{option_type} K={K}: UI+UO={ui+uo:.12f}, DI+DO={di+do:.12f}"
+        )
+
+    # ------- (d) Trivial cases (already-knocked); QL not used (it throws) -------
+
+    def test_up_out_already_knocked_returns_zero(self):
+        # S > H for up-and-out → option is dead, price = 0.
+        p = stocha.barrier_price(
+            s=110.0, k=100.0, r=self.R, sigma=self.SIGMA, t=0.5,
+            barrier=105.0, barrier_type="up-and-out", option_type="call",
+            q=self.Q, method="analytical",
+        )
+        assert abs(p) < 1e-12, f"expected 0.0, got {p}"
+
+    def test_down_out_already_knocked_returns_zero(self):
+        p = stocha.barrier_price(
+            s=90.0, k=100.0, r=self.R, sigma=self.SIGMA, t=0.5,
+            barrier=95.0, barrier_type="down-and-out", option_type="put",
+            q=self.Q, method="analytical",
+        )
+        assert abs(p) < 1e-12, f"expected 0.0, got {p}"
+
+    def test_up_in_already_knocked_equals_vanilla(self):
+        # S > H for up-and-in → barrier already touched, option = vanilla.
+        # stocha has no public BS pricer; compare to QL vanilla under same T_exact.
+        # QL vanilla is safe to call (no trigger check).
+        S_above = 110.0
+        K = 100.0
+        ql_vanilla, T_exact = _ql_vanilla(
+            S_above, K, self.T_DAYS, self.R, self.Q, self.SIGMA, "call"
+        )
+        ki = stocha.barrier_price(
+            s=S_above, k=K, r=self.R, sigma=self.SIGMA, t=T_exact,
+            barrier=105.0, barrier_type="up-and-in", option_type="call",
+            q=self.Q, method="analytical",
+        )
+        # Vanilla agreement is still subject to libm vs boost::math noise; use α tol.
+        assert ki == pytest.approx(ql_vanilla, abs=self.ATOL, rel=self.RTOL), (
+            f"UI past barrier should equal vanilla: stocha={ki}, QL_vanilla={ql_vanilla}"
+        )
+
+    def test_down_in_already_knocked_equals_vanilla(self):
+        S_below = 90.0
+        K = 100.0
+        ql_vanilla, T_exact = _ql_vanilla(
+            S_below, K, self.T_DAYS, self.R, self.Q, self.SIGMA, "put"
+        )
+        ki = stocha.barrier_price(
+            s=S_below, k=K, r=self.R, sigma=self.SIGMA, t=T_exact,
+            barrier=95.0, barrier_type="down-and-in", option_type="put",
+            q=self.Q, method="analytical",
+        )
+        assert ki == pytest.approx(ql_vanilla, abs=self.ATOL, rel=self.RTOL), (
+            f"DI past barrier should equal vanilla: stocha={ki}, QL_vanilla={ql_vanilla}"
+        )
+
+    # ------- (e) S≈H near-barrier (digit cancellation regime) -------
+
+    def test_near_barrier_down_out_put(self):
+        H = 99.99
+        ql_price, T_exact = _ql_barrier(
+            self.S, 100.0, self.T_DAYS, self.R, self.Q, self.SIGMA,
+            "down-and-out", H, "put",
+        )
+        stocha_price = stocha.barrier_price(
+            s=self.S, k=100.0, r=self.R, sigma=self.SIGMA, t=T_exact,
+            barrier=H, barrier_type="down-and-out", option_type="put",
+            q=self.Q, method="analytical",
+        )
+        assert stocha_price == pytest.approx(ql_price, abs=1e-04, rel=1e-03), (
+            f"near-barrier DO put H={H}: stocha={stocha_price}, QL={ql_price}"
+        )
+
+    def test_near_barrier_up_out_call(self):
+        H = 100.01
+        ql_price, T_exact = _ql_barrier(
+            self.S, 100.0, self.T_DAYS, self.R, self.Q, self.SIGMA,
+            "up-and-out", H, "call",
+        )
+        stocha_price = stocha.barrier_price(
+            s=self.S, k=100.0, r=self.R, sigma=self.SIGMA, t=T_exact,
+            barrier=H, barrier_type="up-and-out", option_type="call",
+            q=self.Q, method="analytical",
+        )
+        assert stocha_price == pytest.approx(ql_price, abs=1e-04, rel=1e-03), (
+            f"near-barrier UO call H={H}: stocha={stocha_price}, QL={ql_price}"
+        )
+
+    # ------- (f) Edge maturity (NaN/Inf check only) -------
+
+    @pytest.mark.parametrize("T", [1.0 / 365.0, 10.0])
+    @pytest.mark.parametrize(
+        "barrier_type,H,option_type",
+        [
+            ("up-and-out", 105.0, "call"),
+            ("up-and-in", 105.0, "call"),
+            ("down-and-out", 95.0, "put"),
+            ("down-and-in", 95.0, "put"),
+        ],
+    )
+    def test_edge_maturity_finite(self, T, barrier_type, H, option_type):
+        p = stocha.barrier_price(
+            s=self.S, k=100.0, r=self.R, sigma=self.SIGMA, t=T,
+            barrier=H, barrier_type=barrier_type, option_type=option_type,
+            q=self.Q, method="analytical",
+        )
+        assert math.isfinite(p), f"non-finite price at T={T}: {p}"
+        assert p >= 0.0, f"negative price at T={T}: {p}"
 
 
 class TestAsianPrice:

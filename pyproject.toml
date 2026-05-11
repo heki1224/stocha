@@ -37,6 +37,7 @@ dev = [
     "pytest>=7.0",
     "jupyter>=1.0",
     "matplotlib>=3.7",
+    "QuantLib>=1.30",
 ]
 
 [tool.maturin]
