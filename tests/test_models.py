@@ -273,6 +273,92 @@ class TestHullWhite:
 
 
 # ---------------------------------------------------------------------------
+# Hull-White ZCB accuracy audit (Vasicek analytic vs MC)
+# ---------------------------------------------------------------------------
+
+def _vasicek_zcb_price(r0, a, theta, sigma, T):
+    """Analytic ZCB P(0,T) for dr = (theta - a r) dt + sigma dW (theta const).
+
+    Long-run mean b = theta / a; closed form is Vasicek.
+        B(T) = (1 - exp(-a T)) / a
+        A(T) = exp((b - sigma^2/(2 a^2))(B(T) - T) - sigma^2 B(T)^2 / (4 a))
+        P    = A(T) exp(-B(T) r0)
+    """
+    B = (1.0 - math.exp(-a * T)) / a
+    b = theta / a
+    A = math.exp(
+        (b - sigma * sigma / (2.0 * a * a)) * (B - T)
+        - sigma * sigma * B * B / (4.0 * a)
+    )
+    return A * math.exp(-B * r0)
+
+
+def _mc_zcb_price(r0, a, theta, sigma, T, steps, n_paths, seed=42):
+    """MC ZCB via trapezoidal discount over Hull-White paths."""
+    paths = stocha.hull_white(
+        r0=r0, a=a, theta=theta, sigma=sigma,
+        t=T, steps=steps, n_paths=n_paths, seed=seed,
+    )
+    times = np.linspace(0.0, T, steps + 1)
+    integrals = np.trapezoid(paths, x=times, axis=1)
+    discount = np.exp(-integrals)
+    return float(discount.mean())
+
+
+class TestHullWhiteZcb:
+    """Accuracy audit: stocha.hull_white MC pricing of P(0,T) vs Vasicek closed form.
+
+    Tolerances are observation-based (see
+    .artifacts/2026-05-12-accuracy-audit-hull-white-zcb/observations.md):
+    measured max abs_err = 7.0e-04, max rel_err = 8.2e-04 at n_paths=50k.
+    Tolerances atol=1.5e-03 / rtol=2e-03 give roughly 2x margin while keeping
+    coefficient-bug detection power.
+    """
+
+    # MC vs analytic Vasicek tolerances (observation-based, ~2x margin).
+    ATOL = 1.5e-03
+    RTOL = 2e-03
+
+    # Standard simulation budget for the audit: n_paths=50k, dt ≈ 0.02.
+    N_PATHS = 50_000
+
+    @pytest.mark.parametrize(
+        "label,r0,a,theta,sigma,T",
+        [
+            ("standard_1y",    0.03,  0.10, 0.005,  0.010,  1.0),
+            ("standard_5y",    0.03,  0.10, 0.005,  0.010,  5.0),
+            ("standard_10y",   0.03,  0.10, 0.005,  0.010, 10.0),
+            ("low_a",          0.03,  0.05, 0.0025, 0.010,  5.0),
+            ("high_a",         0.03,  0.50, 0.025,  0.010,  5.0),
+            ("low_vol",        0.03,  0.10, 0.005,  0.003,  5.0),
+            ("high_vol",       0.03,  0.10, 0.005,  0.020,  5.0),
+            ("negative_r0",   -0.01,  0.10, 0.005,  0.010,  5.0),
+            ("r0_above_b",     0.08,  0.10, 0.002,  0.010,  5.0),
+            ("r0_below_b",     0.01,  0.10, 0.008,  0.010,  5.0),
+        ],
+    )
+    def test_zcb_mc_matches_analytic(self, label, r0, a, theta, sigma, T):
+        steps = max(50, int(252 * T / 5.0))  # keep dt ≈ 0.02 across maturities
+        analytic = _vasicek_zcb_price(r0, a, theta, sigma, T)
+        p_mc = _mc_zcb_price(r0, a, theta, sigma, T, steps, self.N_PATHS)
+        assert p_mc == pytest.approx(analytic, abs=self.ATOL, rel=self.RTOL), (
+            f"[{label}] P_mc={p_mc:.6f}, P_analytic={analytic:.6f}, "
+            f"abs_err={abs(p_mc - analytic):.3e}"
+        )
+
+    def test_zcb_sigma_zero_matches_deterministic_ode(self):
+        # σ = 0 → r(t) = b + (r0 - b) exp(-a t); the closed form must equal
+        # exp(-∫r dt) computed analytically (no MC noise). Strict tolerance
+        # validates the Vasicek formula itself, independent of MC.
+        r0, a, theta, sigma, T = 0.03, 0.10, 0.005, 0.0, 5.0
+        b = theta / a
+        int_r = b * T + (r0 - b) * (1.0 - math.exp(-a * T)) / a
+        det_discount = math.exp(-int_r)
+        analytic = _vasicek_zcb_price(r0, a, theta, sigma, T)
+        assert analytic == pytest.approx(det_discount, rel=1e-12)
+
+
+# ---------------------------------------------------------------------------
 # SABR Implied Volatility
 # ---------------------------------------------------------------------------
 

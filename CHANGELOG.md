@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `atol=5e-05, rtol=1e-05` — the cross-library noise floor (Rust `libm` vs
   Boost `boost::math`). No formula bug detected. `QuantLib>=1.30` added to dev
   dependencies; production package is unaffected.
+- **Hull-White ZCB accuracy audit against Vasicek closed form**: new
+  `TestHullWhiteZcb` (10 parametrised MC-vs-analytic cases + 1 deterministic
+  σ=0 sanity). Covers standard 1y/5y/10y maturities, low/high mean-reversion
+  (`a ∈ {0.05, 0.50}`), low/high vol (`σ ∈ {0.003, 0.020}`), negative `r0`,
+  and asymmetric `r0 ≠ b = θ/a` (avoids drift-cancellation hiding bugs).
+  Tolerances `atol=1.5e-03, rtol=2e-03` are observation-based (~2× margin
+  over the measured MC noise floor at `n_paths=50_000`); the σ=0 case
+  validates the closed form itself at `rtol=1e-12` against the deterministic
+  ODE solution. No production code changes.
 
 ## [1.7.1] - 2026-05-10
 
