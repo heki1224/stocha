@@ -26,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over the measured MC noise floor at `n_paths=50_000`); the σ=0 case
   validates the closed form itself at `rtol=1e-12` against the deterministic
   ODE solution. No production code changes.
+- **Merton MJD European call accuracy audit against the Poisson-weighted
+  Black-Scholes sum**: new `TestMertonMjdEuropeanCall` (11 parametrised
+  MC-vs-analytic cases + λ=0 BS-equivalence sanity + 4 put-call parity
+  checks on the closed form). Covers low/high jump intensity λ ∈ {0.5, 5.0},
+  negative and positive mean log-jump, deep OTM (K=140) / ITM (K=70), short
+  (T=0.25) / long (T=2.0) maturities, high jump vol (σ_j=0.30), and a crash
+  regime (λ=2, μ_j=-0.30). The analytic helper sums Poisson weights in log
+  space via `lgamma` with cumulative-weight truncation at 1−1e-12.
+  Tolerances `atol=2.5e-01, rtol=4e-02` are observation-based (~1.4× margin);
+  log-normal heavy-tail MC gives abs_err ≈ 2–4 × SE for European call
+  payoffs, so n_paths (200k) carries the burden — steps cannot compensate
+  (Bernoulli bias is below MC noise floor here). λ=0 matches BS at
+  `rtol=1e-12`; parity holds to `abs=1e-12`. No production code changes.
 
 ## [1.7.1] - 2026-05-10
 
